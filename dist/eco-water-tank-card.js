@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.10";
+const CARD_VERSION = "0.11";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -954,7 +954,7 @@ class EcoWaterTankCard extends HTMLElement {
     else { const hr = new Date().getHours(); phase = hr >= 8 && hr < 19 ? "day" : hr >= 6 && hr < 21 ? "dusk" : "night"; }
     const pumping = !!this._pump && (this._pump.on || now - this._pump.at < PUMP_MS);
     const lvl = this._pct();
-    const overflowing = fi > 0 && lvl != null && lvl >= 97.5;
+    const overflowing = fi > 0 && lvl != null && lvl >= 99.5; // full: the surplus leaves by the overflow
     sc.className = `scene ${phase}${this._photo().photo ? " photo" : ""}${raining ? " rainy" : ""}${fi > 0 ? " flowing" : ""}${raining && i >= 0.8 ? " storm" : ""}${pumping ? " pumping" : ""}${overflowing ? " overflowing" : ""}`;
     const n = raining ? Math.round(10 + i * (DROPS - 10)) : 0;
     this._drops?.forEach((d, k) => { d.style.opacity = k < n ? (0.5 + i * 0.5).toFixed(2) : "0"; });
