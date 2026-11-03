@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.09";
+const CARD_VERSION = "0.10";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -151,9 +151,10 @@ ha-card.mid { --tank:#e09a2f; --tank2:#ffd073; --tankd:#7a4a0c; }
 .tint-rain { opacity:0; transition:opacity 1.5s; } .rainy .tint-rain { opacity:.4; }
 .mtn { fill:var(--mtn); } .grass3 { fill:var(--grass3); }
 .night .wg { filter:brightness(.62) saturate(.9); } .dusk .wg { filter:brightness(.88); } .wg { transition:filter 2s; }
-.photo .utag { font-size:2.7cqw; padding:.9cqw 2.4cqw; } .photo .p-wx { left:2%; top:2%; width:28%; } .photo .p-a { left:31%; top:2%; width:27%; } .photo .p-b { left:59%; top:2%; width:20%; }
-.photo .s-l1, .photo .s-l2, .photo .s-l3 { left:2%; width:25%; } .photo .s-l1 { top:61%; } .photo .s-l2 { top:73%; } .photo .s-l3 { top:85%; }
-.photo .s-r1, .photo .s-r2, .photo .s-r3 { left:80%; width:19%; } .photo .s-r1 { top:62%; } .photo .s-r2 { top:73%; } .photo .s-r3 { top:84%; }
+.photo .utag { font-size:2.7cqw; padding:.9cqw 2.4cqw; } .photo .p-wx { left:2%; top:2%; width:28%; } .photo .p-a { left:31%; top:2%; width:27%; } .photo .p-b { left:59%; top:2%; width:21%; }
+.photo .s-l1, .photo .s-l2, .photo .s-l3, .photo .s-r1, .photo .s-r2, .photo .s-r3 { height:12.6%; overflow:hidden; }
+.photo .s-l1, .photo .s-l2, .photo .s-l3 { left:2%; width:26%; } .photo .s-l1 { top:60%; } .photo .s-l2 { top:73%; } .photo .s-l3 { top:86%; }
+.photo .s-r1, .photo .s-r2, .photo .s-r3 { left:79%; width:20.5%; } .photo .s-r1 { top:60%; } .photo .s-r2 { top:73%; } .photo .s-r3 { top:86%; }
 
 .scene { --grass3:#7cc266; } .scene.dusk { --grass3:#50884a; } .scene.night { --grass3:#27492f; }
 .beam { opacity:0; transition:opacity 2s; mix-blend-mode:screen; } .day .beam { opacity:.55; } .dusk .beam { opacity:.3; } .day.rainy .beam { opacity:.16; } .dusk.rainy .beam, .night .beam { opacity:0; }
@@ -221,15 +222,17 @@ ha-card.mid { --tank:#e09a2f; --tank2:#ffd073; --tankd:#7a4a0c; }
 @keyframes bub { 0% { opacity:0; transform:translate(0,0); } 20% { opacity:.75; } 50% { transform:translate(2px,-26px); } 100% { opacity:0; transform:translate(-2px,-55px); } }
 .cray { fill:#fff; opacity:.07; animation:ray 6s ease-in-out infinite alternate; } .cray:nth-child(2) { animation-delay:2s; } .cray:nth-child(3) { animation-delay:4s; }
 @keyframes ray { to { opacity:.16; transform:translateX(10px); } }
+/* splashes where the stream hits the water: only while water enters the tank */
+.isplash { opacity:0; transition:opacity 1s; } .flowing .isplash { opacity:1; }
 @media (prefers-reduced-motion:reduce) { .scene * { animation:none!important; } .lvl { transition:none; } }
 
 /* ---- overlays ---- */
-.c { position:absolute; display:flex; align-items:center; gap:1.2cqw; padding:.9cqw 1.8cqw .9cqw 1.3cqw; border-radius:2.4cqw;
+.c { position:absolute; display:flex; align-items:center; gap:1.2cqw; padding:.6cqw 1.8cqw .6cqw 1.3cqw; border-radius:2.4cqw;
   background:rgba(8,16,30,.58); border:1px solid rgba(255,255,255,.16); backdrop-filter:blur(3px);
   color:#fff; line-height:1.15; min-width:0; box-sizing:border-box; }
-.c ha-icon { --mdc-icon-size:4cqw; width:4cqw; height:4cqw; flex:none; color:var(--tank2); }
-.c .t { display:flex; flex-direction:column; min-width:0; }
-.c .l { font-size:2cqw; opacity:.78; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.c ha-icon { --mdc-icon-size:3.8cqw; width:3.8cqw; height:3.8cqw; flex:none; color:var(--tank2); }
+.c .t { display:flex; flex-direction:column; min-width:0; flex:1; }
+.c .l { font-size:1.9cqw; line-height:1.12; opacity:.8; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
 .c .l:empty { display:none; }
 .c .v { font-size:3cqw; font-weight:700; white-space:nowrap; }
 .c .v i { font-style:normal; font-weight:400; opacity:.7; margin-right:.5cqw; }
@@ -621,7 +624,7 @@ class EcoWaterTankCard extends HTMLElement {
     }
     const tile = (k, icon, cls, label) => `<div class="c ${cls}" data-tile="${k}"><ha-icon icon="${icon}"></ha-icon><div class="t"><span class="l">${label}</span>
         <span class="v"><i data-e="${k}"></i><span data-v="${k}"></span><u data-u="${k}"></u></span></div></div>`;
-    const clean = (t) => t.replace(/\s*\(.*\)\s*$/, "");
+    const clean = (t) => t.replace(/\s*\(.*\)\s*$/, "").replace(/\s+(estimée?s?|estimé|estimated)(?=\s|$)/gi, "").replace(/\s{2,}/g, " ").trim();
     const list = [];
     for (const [k, srcs, icon, cls] of CHIPS) {
       if (k === "net") continue;
@@ -1038,12 +1041,20 @@ class EcoWaterTankCard extends HTMLElement {
       } else { v = vals[x.k]; est = estimated(ids[x.src]); }
       if (x.kind === "pct") { text = v == null ? "–" : this._fmt(v); unit = "%"; }
       else if (x.kind === "rate") { text = v == null ? "–" : this._fmt(v / 60 / DISPLAY[this._vu() === "gal" ? "gal" : "L"].f, 1); unit = ` ${this._fu()}`; }
+      else if (vu === "L" && v != null && Math.abs(v) >= 100000) { text = this._fmt(v / 1000, 1); unit = " m³"; } // 243 605 L -> 243,6 m³
       else { text = this._fv(v); unit = ` ${vu}`; }
       set(`[data-v="${x.k}"]`, text);
       set(`[data-u="${x.k}"]`, v == null ? "" : unit);
       set(`[data-e="${x.k}"]`, est ? "≈" : "");
       $(`[data-v="${x.k}"]`).className = cls;
     }
+
+    // a value wider than its chip shrinks until it fits
+    r.querySelectorAll(".c .v").forEach((v) => {
+      v.style.fontSize = "";
+      const room = v.parentElement.clientWidth;
+      for (let k = 0.93; room > 0 && v.offsetWidth > room && k > 0.5; k -= 0.07) v.style.fontSize = `${(3 * k).toFixed(2)}cqw`;
+    });
 
     // number inputs: show the pending value, but never overwrite one being edited
     r.querySelectorAll("[data-num]").forEach((inp) => {
