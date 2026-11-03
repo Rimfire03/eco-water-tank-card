@@ -80,6 +80,15 @@ volume_unit: L                        # display unit: L, m³, gal, ft³ (default
 
 The card ships with a day and a night picture (`src/images/`, bundled into `dist/` at build time). Use your own with `image` / `image_night`, or set `photo: false` for the drawn scene. Prompts, alignment (`tank`, `pipe`, `debug`): see [IMAGE-PROMPTS.md](IMAGE-PROMPTS.md).
 
+## Flow and rain intensity: learned maximum
+
+The thickness and speed of the water in the pipe, and the amount of rain, show the current flow **relative to the highest flow ever seen on that source**:
+
+- The first time, the card reads the recorder history (45 days) and takes the highest flow as the maximum: the statistics `max` of an intensity or flow sensor, or, for a cumulative counter (gauge, inlet meter), the highest rise over 10 minutes.
+- It then keeps learning: any flow above the maximum becomes the new maximum. The maximum is stored in your Home Assistant user data (shared between your devices, with a `localStorage` fallback).
+- Without history yet, the reference is a "heavy" flow (10 mm/h of rain, or 10 % of the capacity per hour).
+- Sources: `rain_entity`, `weather_entity` (fixed intensity per weather state), the integration's rainwater estimate, and the inlet meter (`inlet_entity`), whose flow moves the pipe even without rain.
+
 ## Rain and night
 
 - Rain: set `rain_entity` to your rain gauge (a mm/h sensor, or a cumulative mm counter; intensity comes from how fast it rises, 10 mm/h = heavy). Without it, the card uses the integration's "Rainwater collected" sensor. It stops raining 12 min after the last increase.

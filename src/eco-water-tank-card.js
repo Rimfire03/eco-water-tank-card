@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.08";
+const CARD_VERSION = "0.09";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -48,6 +48,51 @@ function parseUnit(u) {
 const BUNDLED_IMAGES = {}; // @@IMAGES@@
 const DROPS = 60;
 const PUMP_MS = 90000, RAIN_MIN = 12;
+const RATE_WINDOW = 10 * 60000; // flows of cumulative counters are measured over this window
+
+/** Rate (units per hour) of a counter from its samples [[ms, value]]: rise over the last RATE_WINDOW. */
+function windowRate(h, now, W = RATE_WINDOW) {
+  if (!h || h.length < 2) return 0;
+  const t0 = now - W;
+  let ref = h[0];
+  for (const q of h) { if (q[0] <= t0) ref = q; else break; }
+  const dx = h[h.length - 1][1] - ref[1];
+  return dx > 0 ? dx / (W / 3600000) : 0;
+}
+
+/** Highest windowRate over a recorded history [{s, lu}] (same measure as the live one). */
+function histMax(rows, f, W = RATE_WINDOW) {
+  const pts = rows.map((r) => [(r.lu ?? r.lc ?? r.last_updated) * 1000, parseFloat(r.s) * f]).filter((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]));
+  let best = 0, j = 0;
+  for (let n = 1; n < pts.length; n++) {
+    while (j + 1 <= n && pts[j + 1][0] <= pts[n][0] - W) j++;
+    const dx = pts[n][1] - pts[j][1];
+    if (dx > 0) best = Math.max(best, dx / (W / 3600000));
+  }
+  return best;
+}
+
+/** Learned maximum flow per source entity, shared by all cards, kept in the HA user data (and localStorage). */
+const MAXES = { data: {}, seeded: {}, loading: null, timer: null };
+function maxesLoad(hass) {
+  MAXES.loading ||= (async () => {
+    let v = null;
+    try { v = (await hass.callWS({ type: "frontend/get_user_data", key: "eco_water_tank_card" }))?.value; } catch (e) { /* user data unavailable */ }
+    if (!v) { try { v = JSON.parse(localStorage.getItem("eco_water_tank_card") || "null"); } catch (e) { /* no storage */ } }
+    for (const [k, x] of Object.entries(v?.max || {})) MAXES.data[k] = Math.max(MAXES.data[k] ?? 0, x);
+    Object.assign(MAXES.seeded, v?.seeded || {});
+  })();
+  return MAXES.loading;
+}
+function maxesSave(hass) {
+  clearTimeout(MAXES.timer);
+  MAXES.timer = setTimeout(async () => {
+    const value = { max: MAXES.data, seeded: MAXES.seeded };
+    try { localStorage.setItem("eco_water_tank_card", JSON.stringify(value)); } catch (e) { /* no storage */ }
+    try { await hass.callWS({ type: "frontend/set_user_data", key: "eco_water_tank_card", value }); } catch (e) { /* user data unavailable */ }
+  }, 5000);
+}
+
 const CHIPS = [
   // key, entity keys (first one present wins), icon, placement class
   ["rain_in", ["rain_in"], "mdi:weather-pouring", "p-a"],
@@ -143,21 +188,21 @@ ha-card.mid { --tank:#e09a2f; --tank2:#ffd073; --tankd:#7a4a0c; }
 .pflow { fill:none; stroke:var(--tank2); stroke-linecap:round; stroke-linejoin:round; opacity:0;
   transition:opacity 1s, stroke-width .8s; }
 .pdark { fill:none; stroke:var(--tankd); stroke-linecap:round; stroke-linejoin:round; opacity:0; transition:opacity 1s, stroke-width .8s; }
-.rainy .dark-in, .pumping .dark-out { opacity:.95; }
+.flowing .dark-in, .pumping .dark-out { opacity:.95; }
 .pshine { fill:none; stroke:#fff; stroke-width:1; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:2 7 4 15 1 9; opacity:0;
   transition:opacity 1s; animation:flow var(--fs,1s) linear infinite; }
-.rainy .flow-in, .rainy .shine-in, .pumping .flow-out, .pumping .shine-out { opacity:1; }
-.rainy .shine-in, .pumping .shine-out { opacity:.75; }
+.flowing .flow-in, .flowing .shine-in, .pumping .flow-out, .pumping .shine-out { opacity:1; }
+.flowing .shine-in, .pumping .shine-out { opacity:.75; }
 @keyframes flow { to { stroke-dashoffset:-38; } }
 .stream { stroke:var(--tank2); stroke-linecap:round; opacity:0; transition:opacity 1s, stroke-width .8s; }
 .stream-shine { stroke:#fff; stroke-width:1; stroke-linecap:round; stroke-dasharray:3 9; opacity:0; animation:streamfall .35s linear infinite; }
-.rainy .stream { opacity:.95; } .rainy .stream-shine { opacity:.8; } @keyframes streamfall { to { stroke-dashoffset:-12; } }
+.flowing .stream { opacity:.95; } .flowing .stream-shine { opacity:.8; } @keyframes streamfall { to { stroke-dashoffset:-12; } }
 .isplash ellipse { fill:none; stroke:#fff; stroke-width:1; opacity:0; transform-box:fill-box; transform-origin:center; animation:splash 1.1s ease-out var(--d) infinite; }
 .isplash .foam { fill:#fff; stroke:none; animation:foam .5s ease-in-out infinite alternate; }
 @keyframes foam { to { transform:scale(1.3,1.6); opacity:.45; } }
 .isplash .sd { fill:#fff; opacity:0; animation:sdrop .9s ease-out var(--d) infinite; }
 @keyframes sdrop { 0% { opacity:0; transform:translate(0,0); } 12% { opacity:.95; } 50% { transform:translate(calc(var(--dx)*.7),-9px); } 100% { opacity:0; transform:translate(var(--dx),1px); } }
-.rainy .isplash ellipse { opacity:1; } .rainy .isplash .foam { opacity:.7; }
+.flowing .isplash ellipse { opacity:1; } .flowing .isplash .foam { opacity:.7; }
 .spill { stroke:var(--tank2); stroke-width:2.6; stroke-linecap:round; opacity:0; }
 .overflowing .spill { opacity:1; }
 .tap { fill:var(--tank2); opacity:0; animation:drip 1.1s ease-in infinite; } .pumping .tap { opacity:1; }
@@ -755,58 +800,117 @@ class EcoWaterTankCard extends HTMLElement {
   }
 
   /**
-   * Rain intensity 0..1 and the time it last rained. Sources, any of them: `rain_entity`
-   * (mm/h or in/h sensor, cumulative mm / in gauge, or a binary rain sensor), `weather_entity`,
-   * else the integration's "rainwater collected" sensor (litres, scaled to the tank capacity).
+   * Rain and inflow intensity 0..1 = current flow / the highest flow ever seen on that source.
+   * The maximum is seeded from the recorder history (45 days) and learned for good: any flow above
+   * it becomes the new maximum. Rain sources: `rain_entity` (mm/h or in/h sensor, cumulative gauge,
+   * or a rain binary sensor), `weather_entity`, else the integration's "rainwater collected".
+   * Inflow sources: the inlet meter (`inlet_entity`, total or flow) or the integration's estimate.
    */
   _trackRain() {
-    const c = this._config, now = Date.now();
-    const srcs = [c.rain_entity, c.weather_entity].filter(Boolean);
-    if (!srcs.length && this._ids.rain_in) srcs.push(this._ids.rain_in);
-    const r = (this._rain ||= { i: 0, rainAt: 0, rate: null, s: {} });
-    r.rate = null;
-    for (const id of srcs) {
-      const s = (r.s[id] ||= { last: null, at: 0, i: 0, rainAt: 0 });
-      this._rainOf(id, s, now, r);
-      if (s.rainAt >= r.rainAt) { r.rainAt = s.rainAt; r.i = s.i; }
-    }
+    const c = this._config, ids = this._ids, now = Date.now();
+    const srcs = []; // [entity id, true when it measures the water entering the tank rather than the rain]
+    for (const id of [c.rain_entity, c.weather_entity]) if (id) srcs.push([id, false]);
+    if (!srcs.length && ids.rain_in) srcs.push([ids.rain_in, false]);
+    if (ids.water_in) srcs.push([ids.water_in, true]);
+    else if (!srcs.length && ids.water_in_estimated) srcs.push([ids.water_in_estimated, true]);
+    const r = (this._rain ||= { i: 0, fi: 0, rainAt: 0, rate: null, s: {} });
+    maxesLoad(this._hass);
+    for (const [id, inflow] of srcs) this._rainOf(id, (r.s[id] ||= { inflow }), now);
+    this._rainIntensity(now);
   }
 
-  _rainOf(id, s, now, r) {
+  _rainOf(id, s, now) {
     const st = this._hass.states[id];
     if (!st) return;
+    s.id = id;
     const dom = id.split(".")[0];
-    if (dom === "weather") {
-      const i = WEATHER_RAIN[st.state] ?? 0;
-      if (i > 0) { s.i = i; s.rainAt = now; }
-      return;
-    }
-    if (dom === "binary_sensor" || dom === "input_boolean" || dom === "switch") {
-      if (st.state === "on") { s.i = 0.5; s.rainAt = now; }
-      return;
-    }
+    if (dom === "weather") { s.fixed = true; s.i = WEATHER_RAIN[st.state] ?? 0; if (s.i > 0) s.rainAt = now; return; }
+    if (dom === "binary_sensor" || dom === "input_boolean" || dom === "switch") { s.fixed = true; s.i = st.state === "on" ? 0.5 : 0; if (s.i > 0) s.rainAt = now; return; }
     const v = parseFloat(st.state);
     if (!Number.isFinite(v)) return;
     const k = parseUnit(st.attributes?.unit_of_measurement);
-    if (k.kind === "lrate") {
-      const mmh = v * k.f, inch = this._lu() === "in";
-      r.rate = { v: mmh / (inch ? 25.4 : 1), unit: `${inch ? "in" : "mm"}/h` };
-      s.i = Math.min(1, mmh / 10);
-      if (mmh > 0) s.rainAt = now;
-      return;
+    const byUnit = k.kind === "len" || k.kind === "vol" || k.kind === "lrate" || k.kind === "vrate";
+    s.len = k.kind === "len" || k.kind === "lrate";
+    s.base ??= s.len ? 10 : Math.max(10, (this._cap() || 1000) * 0.1); // default "heavy": 10 mm/h, or 10 % of the capacity per hour
+    if (k.kind === "lrate" || k.kind === "vrate") {
+      s.rate = v * k.f; // mm/h or L/h
+      if (s.rate > 0) s.rainAt = now;
+    } else {
+      const x = byUnit ? v * k.f : v;
+      if (!s.h) { s.h = [[now, x]]; this._loadRecent(id, s, byUnit ? k.f : 1); }
+      else {
+        const last = s.h[s.h.length - 1][1];
+        if (x !== last) { s.h.push([now, x]); if (x > last) s.rainAt = now; }
+        while (s.h.length > 2 && s.h[1][0] <= now - RATE_WINDOW) s.h.shift(); // keep one sample at the start of the window
+      }
     }
-    // cumulative gauge (mm, cm, in), or the integration's litres: intensity from how fast it rises
-    const x = k.kind === "len" ? v * k.f : v;
-    const heavy = k.kind === "len" ? 10 : Math.max(10, (this._cap() || 1000) * 0.1); // 10 mm/h, or 10 % of capacity per hour
-    if (s.last == null) {
-      // first sight: a recent change means it is probably raining right now
-      if (now - new Date(st.last_changed || 0).getTime() < 10 * 60000) { s.rainAt = now; s.i = 0.3; }
-    } else if (x > s.last) {
-      s.i = Math.max(0.1, Math.min(1, ((x - s.last) / Math.max(s.at ? (now - s.at) / 3600000 : 0.1, 0.02)) / heavy));
-      s.rainAt = now;
+    this._seed(id, s, k, byUnit ? k.f : 1);
+  }
+
+  /** Flow of every source against its learned maximum; learns a new maximum when it is beaten. */
+  _rainIntensity(now) {
+    const r = this._rain;
+    if (!r) return;
+    let i = 0, fi = 0, rainAt = r.rainAt, rate = null;
+    for (const [id, s] of Object.entries(r.s)) {
+      let si;
+      if (s.fixed) si = s.i;
+      else {
+        const sr = s.h ? windowRate(s.h, now) : s.rate || 0; // per hour, in mm or litres
+        if (sr > (MAXES.data[id] || 0)) { MAXES.data[id] = sr; maxesSave(this._hass); }
+        // until the history is read the default "heavy" flow is the reference, so a first value does not look like a storm
+        const mx = Math.max(MAXES.data[id] || 0, (s.base || 10) * (MAXES.seeded[id] || s.seedFailed ? 0.25 : 1));
+        si = sr > 0 ? Math.min(1, Math.max(0.06, sr / mx)) : 0;
+        if (s.len && sr > 0) rate = { v: sr / (this._lu() === "in" ? 25.4 : 1), unit: `${this._lu()}/h` };
+      }
+      const active = si > 0 && (s.fixed || now - (s.rainAt || 0) < RAIN_MIN * 60000);
+      if (!active) continue;
+      if (s.inflow) fi = Math.max(fi, si); else i = Math.max(i, si);
+      rainAt = Math.max(rainAt, s.rainAt || 0);
     }
-    if (s.last == null || x !== s.last) s.at = now;
-    s.last = x;
+    r.i = i; r.fi = fi; r.rainAt = rainAt; r.rate = rate;
+  }
+
+  /** Samples of the last minutes at first sight, so the flow is right as soon as the card opens. */
+  async _loadRecent(id, s, f) {
+    try {
+      const res = await this._hass.callWS({
+        type: "history/history_during_period", start_time: new Date(Date.now() - 15 * 60000).toISOString(),
+        end_time: new Date().toISOString(), entity_ids: [id], include_start_time_state: true,
+        significant_changes_only: false, minimal_response: true, no_attributes: true,
+      });
+      const pts = (res?.[id] || []).map((q) => [(q.lu ?? q.lc ?? q.last_updated) * 1000, parseFloat(q.s) * f]).filter((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]));
+      const first = s.h?.[0]?.[0] ?? Date.now();
+      const old = pts.filter((q) => q[0] < first);
+      for (let n = 1; n < old.length; n++) if (old[n][1] > old[n - 1][1]) s.rainAt = Math.max(s.rainAt || 0, old[n][0]);
+      s.h = [...old, ...(s.h || [])];
+    } catch (e) { /* no recorder: only rises seen from now on count */ }
+  }
+
+  /** Once per source: the highest flow in the recorder history becomes the starting maximum. */
+  _seed(id, s, k, f) {
+    if (s.seeding || MAXES.seeded[id]) return;
+    s.seeding = true;
+    maxesLoad(this._hass).then(async () => {
+      if (MAXES.seeded[id]) return;
+      let best = 0;
+      try {
+        const start = new Date(Date.now() - 45 * 864e5).toISOString(), end = new Date().toISOString();
+        if (k.kind === "lrate" || k.kind === "vrate") {
+          const res = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: start, end_time: end, statistic_ids: [id], period: "hour", types: ["max"] });
+          for (const row of res?.[id] || []) best = Math.max(best, (row.max || 0) * k.f);
+        } else {
+          const res = await this._hass.callWS({
+            type: "history/history_during_period", start_time: start, end_time: end, entity_ids: [id],
+            include_start_time_state: true, significant_changes_only: false, minimal_response: true, no_attributes: true,
+          });
+          best = histMax(res?.[id] || [], f);
+        }
+      } catch (e) { s.seedFailed = true; return; } // no recorder: learn from live flows only (not retried)
+      if (best > (MAXES.data[id] || 0)) MAXES.data[id] = best;
+      MAXES.seeded[id] = true;
+      maxesSave(this._hass);
+    });
   }
 
   /** The pump: `pump_entity` (switch, or a power sensor above `pump_threshold` W), a flow meter above 0, or a rising "water out" counter. */
@@ -826,16 +930,16 @@ class EcoWaterTankCard extends HTMLElement {
     const v = parseFloat(st.state);
     if (!Number.isFinite(v)) return;
     if (parseUnit(st.attributes?.unit_of_measurement).kind === "vrate") { p.on = v > 0; return; }
-    if (p.last == null) { if (now - new Date(st.last_changed || 0).getTime() < PUMP_MS) p.at = now; }
-    else if (v > p.last) p.at = now;
+    if (p.last != null && v > p.last) p.at = now;
     p.last = v;
   }
 
   _weather() {
     const r = this._rain, h = this._hass, now = Date.now();
-    const idle = r ? (now - r.rainAt) / 60000 : Infinity;
-    const raining = idle < RAIN_MIN;
-    const i = raining ? r.i * (idle < 6 ? 1 : 0.5) : 0;
+    this._rainIntensity(now); // the flow decays by itself once it stops
+    const raining = !!r && r.i > 0;
+    const i = raining ? r.i : 0;
+    const fi = r ? Math.max(r.i, r.fi || 0) : 0; // the pipe follows rain or the inflow meter
     const sc = this.shadowRoot?.querySelector("[data-scene]");
     if (!sc) return;
     // day / dusk / night: sun elevation if available, else the clock
@@ -847,16 +951,16 @@ class EcoWaterTankCard extends HTMLElement {
     else { const hr = new Date().getHours(); phase = hr >= 8 && hr < 19 ? "day" : hr >= 6 && hr < 21 ? "dusk" : "night"; }
     const pumping = !!this._pump && (this._pump.on || now - this._pump.at < PUMP_MS);
     const lvl = this._pct();
-    const overflowing = raining && lvl != null && lvl >= 97.5;
-    sc.className = `scene ${phase}${this._photo().photo ? " photo" : ""}${raining ? " rainy" : ""}${raining && i >= 0.8 ? " storm" : ""}${pumping ? " pumping" : ""}${overflowing ? " overflowing" : ""}`;
+    const overflowing = fi > 0 && lvl != null && lvl >= 97.5;
+    sc.className = `scene ${phase}${this._photo().photo ? " photo" : ""}${raining ? " rainy" : ""}${fi > 0 ? " flowing" : ""}${raining && i >= 0.8 ? " storm" : ""}${pumping ? " pumping" : ""}${overflowing ? " overflowing" : ""}`;
     const n = raining ? Math.round(10 + i * (DROPS - 10)) : 0;
     this._drops?.forEach((d, k) => { d.style.opacity = k < n ? (0.5 + i * 0.5).toFixed(2) : "0"; });
     const flow = sc.querySelector("[data-flow]");
-    const wpx = (1 + i * 5.6) * (this._photo().photo ? 0.55 : 1); // trickle -> full pipe
+    const wpx = (1 + fi * 5.6) * (this._photo().photo ? 0.55 : 1); // trickle -> full pipe
     sc.querySelector("[data-dark]").style.strokeWidth = wpx.toFixed(1);
     flow.style.strokeWidth = Math.max(0.8, wpx * 0.55).toFixed(1);
-    sc.style.setProperty("--fs", `${(1.5 - i * 1.25).toFixed(2)}s`);
-    sc.querySelector("[data-stream]").style.strokeWidth = (1 + i * 5).toFixed(1);
+    sc.style.setProperty("--fs", `${(1.5 - fi * 1.25).toFixed(2)}s`);
+    sc.querySelector("[data-stream]").style.strokeWidth = (1 + fi * 5).toFixed(1);
     // weather chip
     const w = (c) => this._loc(`component.weather.entity_component._.state.${c}`, c);
     const cond = raining ? (i < 0.6 ? "rainy" : "pouring") : phase === "night" ? "clear-night" : "sunny";
