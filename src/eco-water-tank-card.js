@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.06";
+const CARD_VERSION = "0.07";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -772,9 +772,60 @@ class EcoWaterTankCard extends HTMLElement {
   }
 }
 
+const EDITOR_T = {
+  en: { import: "Import from the integration", none: "No Eco Water Tank found.", old: "Update the Eco Water Tank integration (0.4.6 or later) to import.", done: "Imported:", pick: "Several tanks: choose one." },
+  fr: { import: "Importer depuis l'intégration", none: "Aucun Eco Water Tank trouvé.", old: "Mets à jour l'intégration Eco Water Tank (0.4.6 ou plus) pour importer.", done: "Importé :", pick: "Plusieurs cuves : choisis-en une." },
+};
+
 class EcoWaterTankCardEditor extends HTMLElement {
   setConfig(c) { this._config = c; this._render(); }
-  set hass(h) { this._hass = h; if (this._form) this._form.hass = h; }
+  set hass(h) {
+    this._hass = h;
+    if (this._form) this._form.hass = h;
+    if (this._btn) this._btn.textContent = this._t("import");
+  }
+  _t(k) { return (EDITOR_T[(this._hass?.language || "en").slice(0, 2)] || EDITOR_T.en)[k]; }
+
+  _emit(config) {
+    this._config = config;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
+    this._render();
+  }
+
+  /** Fill device, name and rain sensor from the integration's own configuration. */
+  async _import() {
+    const note = (t) => { this._msg.textContent = t; };
+    this._pick.replaceChildren();
+    note("");
+    let tanks;
+    try {
+      ({ tanks } = await this._hass.callWS({ type: `${DOMAIN}/card_config` }));
+    } catch (e) {
+      note(this._t("old"));
+      return;
+    }
+    const known = tanks.filter((x) => x.device_id);
+    if (!known.length) { note(this._t("none")); return; }
+    const cur = this._config.device;
+    const match = known.find((x) => x.device_id === cur) || (known.length === 1 ? known[0] : null);
+    if (match) return this._apply(match);
+    note(this._t("pick"));
+    for (const x of known) {
+      const b = document.createElement("button");
+      b.textContent = x.name;
+      b.addEventListener("click", () => this._apply(x));
+      this._pick.appendChild(b);
+    }
+  }
+
+  _apply(t) {
+    const config = { ...this._config, device: t.device_id, name: t.name };
+    if (t.rain_entity) config.rain_entity = t.rain_entity;
+    this._emit(config);
+    this._msg.textContent = `${this._t("done")} ${t.name}${t.rain_entity ? ` (${t.rain_entity})` : ""}`;
+    this._pick.replaceChildren();
+  }
+
   _render() {
     if (!this._form) {
       this._form = document.createElement("ha-form");
@@ -782,7 +833,20 @@ class EcoWaterTankCardEditor extends HTMLElement {
       this._form.addEventListener("value-changed", (e) =>
         this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: e.detail.value }, bubbles: true, composed: true })));
       this.appendChild(this._form);
+      const box = document.createElement("div");
+      box.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px";
+      const btn = document.createElement("button");
+      btn.style.cssText = "cursor:pointer;font:inherit;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid var(--primary-color);background:var(--primary-color);color:var(--text-primary-color,#fff)";
+      btn.addEventListener("click", () => this._import());
+      this._btn = btn;
+      this._msg = document.createElement("span");
+      this._msg.style.cssText = "font-size:.85rem;color:var(--secondary-text-color)";
+      this._pick = document.createElement("div");
+      this._pick.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;width:100%";
+      box.append(btn, this._msg, this._pick);
+      this.appendChild(box);
     }
+    this._btn.textContent = this._t("import");
     this._form.hass = this._hass;
     this._form.data = this._config;
     this._form.schema = [
