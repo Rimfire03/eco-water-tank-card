@@ -2,8 +2,10 @@
 
 Lovelace card for the [Eco Water Tank](https://github.com/Rimfire03/eco-water-tank) integration. No dependencies.
 
-![Eco Water Tank card, rainy day](https://raw.githubusercontent.com/Rimfire03/eco-water-tank-card/main/docs/preview-rain.png)
-![Eco Water Tank card, rainy night](https://raw.githubusercontent.com/Rimfire03/eco-water-tank-card/main/docs/preview-night.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Rimfire03/eco-water-tank-card/main/docs/preview-rain.png" alt="Eco Water Tank card, rainy day" width="49%">
+  <img src="https://raw.githubusercontent.com/Rimfire03/eco-water-tank-card/main/docs/preview-night.png" alt="Eco Water Tank card, rainy night" width="49%">
+</p>
 
 - Photo-realistic cross-section (day and night pictures bundled): buried concrete tank, downspout, pump. Animated water, inflow pipe, float, rain and all the data (level, volume, in/out, rain, overflow, usable volume) sit on the picture
 - Rain falls on the scene when it rains; more drops and a thicker, faster flow in the pipe as intensity grows
