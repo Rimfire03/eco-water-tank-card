@@ -1,0 +1,19 @@
+{
+  "name": "eco-water-tank-card",
+  "version": "0.02",
+  "description": "Lovelace card for the Eco Water Tank integration (Home Assistant / HACS)",
+  "main": "dist/eco-water-tank-card.js",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "keywords": [
+    "home-assistant",
+    "hacs",
+    "custom-card",
+    "lovelace",
+    "water-tank",
+    "rainwater"
+  ],
+  "author": "Rimfire03",
+  "license": "MIT"
+}
