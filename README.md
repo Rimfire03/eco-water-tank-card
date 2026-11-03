@@ -1,6 +1,6 @@
 # Eco Water Tank Card
 
-Lovelace card for the [Eco Water Tank](https://github.com/Rimfire03/eco-water-tank) integration. No dependencies.
+Lovelace card for water tanks, made for the [Eco Water Tank](https://github.com/Rimfire03/eco-water-tank) integration but **usable without it**, with any sensors and units. No dependencies.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Rimfire03/eco-water-tank-card/main/docs/preview-rain.png" alt="Eco Water Tank card, rainy day" width="49%">
@@ -46,6 +46,35 @@ entities:
   # rain_efficiency, calibrate_volume, calibrate_percent, apply_correction,
   # mark_full, mark_empty, share_tank
 ```
+
+## Use without the integration
+
+Give the card your own entities (any integration, ESPHome, MQTT, Shelly...):
+
+```yaml
+type: custom:eco-water-tank-card
+name: Rain tank
+level_entity: sensor.tank_distance    # %, height, distance or volume
+level_empty: 150                      # reading when empty (height/distance sensors)
+level_full: 20                        # reading when full
+capacity: 5                           # litres, or in capacity_unit / the unit of your volume sensor
+capacity_unit: m³                     # optional: L, m³, gal, ft³
+pump_limit: 0.2                       # optional: volume the pump can never draw
+inlet_entity: sensor.water_in         # optional: total (L, m³, gal...) or flow (L/min, m³/h, gpm...)
+outlet_entity: sensor.water_out       # optional: total or flow
+pump_entity: switch.pump              # optional: switch, or a power sensor in W
+rain_entity: sensor.rain_rate         # optional
+weather_entity: weather.home          # optional
+volume_unit: L                        # display unit: L, m³, gal, ft³ (default: your HA unit system)
+```
+
+- **Level** (`level_entity`): a `%` sensor is used as is. A height or distance sensor (m, cm, mm, in, ft...) needs `level_empty` and `level_full` (its readings when empty and full; works for ultrasonic sensors that measure the distance to the water), or `tank_height` for a height sensor. A volume sensor (L, m³, gal, ft³...) needs `capacity`.
+- **Volume** (`volume_entity`): optional if the level and a `capacity` are known; otherwise the card shows the volume from the sensor and derives the percentage from `capacity`.
+- **Water in / out**: a counter (L, mL, m³, ft³, gal...) gives the total and **today's total** (read from the recorder history since midnight). A flow meter (L/min, L/h, m³/h, gal/min, gpm...) shows the instant flow instead.
+- **Pump**: animated while `pump_entity` is on (or its power exceeds `pump_threshold`, default 5 W), while a flow meter reads above 0, or while the "water out" counter keeps rising.
+- **Rain**: `rain_entity` can be an intensity sensor (mm/h, in/h, mm/min...), a cumulative gauge (mm, cm, in), or a rain binary sensor; `weather_entity` uses the weather state (rainy, pouring, lightning-rainy...). Both can be set.
+- **Units**: volumes are converted from L, mL, cL, dL, hL, m³, ft³, gal (US), imp gal, fl. oz., CCF; heights and rain from mm, cm, dm, m, in, ft, yd. The card displays litres or gallons following your Home Assistant unit system, or `volume_unit` (L, m³, gal, ft³).
+- Any key of the `entities` map below also works without the integration, for example `rain_in` or `overflow`.
 
 ## Photo background
 

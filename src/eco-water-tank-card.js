@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.07";
+const CARD_VERSION = "0.08";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -11,14 +11,40 @@ console.info(
 // (entity names, states, weather conditions) comes from HA in the user's language.
 const T = {
   en: { net: "Net today", calib: "Calibration", low: "Low", ok: "OK", high: "Full",
-    missing: "Select an Eco Water Tank device.",
+    capacity: "Capacity", usable: "Usable volume", in_today: "In today", out_today: "Out today", title: "Water tank",
+    missing: "Select an Eco Water Tank device, or set level_entity / volume_entity.",
     hint: "Type the real volume or fill, then Apply. Or mark the tank full/empty right now." },
   fr: { net: "Bilan du jour", calib: "Calibration", low: "Bas", ok: "OK", high: "Plein",
-    missing: "Choisis un appareil Eco Water Tank.",
+    capacity: "Capacité", usable: "Volume utilisable", in_today: "Entrée du jour", out_today: "Sortie du jour", title: "Cuve d'eau",
+    missing: "Choisis un appareil Eco Water Tank, ou renseigne level_entity / volume_entity.",
     hint: "Saisis le volume ou le remplissage réel, puis Appliquer. Ou marque la cuve pleine/vide maintenant." },
 };
 
 const DOMAIN = "eco_water_tank";
+
+// Units: everything is read in litres, mm, % (rates per hour) and shown in the user's unit system.
+const VOLUME = { "L": 1, "l": 1, "mL": 0.001, "ml": 0.001, "cL": 0.01, "dL": 0.1, "hL": 100, "m³": 1000, "m3": 1000, "ft³": 28.316846592, "ft3": 28.316846592,
+  "gal": 3.785411784, "gallon": 3.785411784, "gallons": 3.785411784, "US gal": 3.785411784, "imp gal": 4.54609, "gal (UK)": 4.54609, "fl. oz.": 0.0295735295625,
+  "CCF": 2831.6846592 };
+const LENGTH = { "mm": 1, "cm": 10, "dm": 100, "m": 1000, "km": 1e6, "in": 25.4, "ft": 304.8, "yd": 914.4, "mi": 1609344 };
+const TIME_H = { s: 1 / 3600, sec: 1 / 3600, min: 1 / 60, h: 1, hr: 1, d: 24, day: 24 };
+const DISPLAY = { "L": { f: 1, d: 0 }, "m³": { f: 1000, d: 2 }, "gal": { f: VOLUME.gal, d: 0 }, "ft³": { f: VOLUME["ft³"], d: 1 } };
+const WEATHER_RAIN = { rainy: 0.35, pouring: 0.9, "lightning-rainy": 0.85, "snowy-rainy": 0.3, hail: 0.6, lightning: 0.4 };
+
+/** kind: pct | vol (f = L) | len (f = mm) | vrate (f = L/h) | lrate (f = mm/h) | other */
+function parseUnit(u) {
+  u = String(u ?? "").trim();
+  if (u === "%") return { kind: "pct", f: 1 };
+  if (u.toLowerCase() === "gpm") return { kind: "vrate", f: VOLUME.gal * 60 };
+  if (u in VOLUME) return { kind: "vol", f: VOLUME[u] };
+  if (u in LENGTH) return { kind: "len", f: LENGTH[u] };
+  const m = u.match(/^(.+?)\s*\/\s*(s|sec|min|h|hr|d|day)$/);
+  if (m) {
+    if (m[1] in VOLUME) return { kind: "vrate", f: VOLUME[m[1]] / TIME_H[m[2]] };
+    if (m[1] in LENGTH) return { kind: "lrate", f: LENGTH[m[1]] / TIME_H[m[2]] };
+  }
+  return { kind: "other", f: 1 };
+}
 const BUNDLED_IMAGES = {}; // @@IMAGES@@
 const DROPS = 60;
 const PUMP_MS = 90000, RAIN_MIN = 12;
@@ -469,7 +495,7 @@ function scene(opt = {}) {
 </svg>
 <div class="c p-wx" data-wx><ha-icon data-wxi icon="mdi:weather-sunny"></ha-icon><div class="t"><span class="l" data-wxs></span><span class="v" data-wxl></span></div></div>
 @CHIPS@
-<div class="tankinfo"><div class="pc"><span data-pct>–</span><small>%</small></div><div class="vl"><span data-vol>–</span> L</div><div class="cp" data-cap></div></div>
+<div class="tankinfo"><div class="pc"><span data-pct>–</span><small>%</small></div><div class="vl"><span data-vol>–</span> <span data-vu>L</span></div><div class="cp" data-cap></div></div>
 <div class="utag" data-utag></div>
 </div>`;
   return opt.photo ? toPhoto(html, opt) : html;
@@ -477,14 +503,15 @@ function scene(opt = {}) {
 
 class EcoWaterTankCard extends HTMLElement {
   setConfig(config) {
-    if (!config || (!config.device && !config.entity && !config.entities)) {
-      throw new Error("Set `device` (or `entity`, or an `entities` map)");
+    if (!config || (!config.device && !config.entity && !config.entities && !config.level_entity && !config.volume_entity)) {
+      throw new Error("Set `device`, or `level_entity` / `volume_entity` to use the card without the integration");
     }
     this._config = config;
     this._key = null;
     this._ids = null;
     this._rain = null;
     this._pump = null;
+    this._base = {};
     if (this._hass) this.hass = this._hass;
   }
 
@@ -521,17 +548,23 @@ class EcoWaterTankCard extends HTMLElement {
 
   _loc(key, fallback) { return this._hass.localize?.(key) || fallback; }
 
-  /** translation_key -> entity_id, from the entity registry (names are user-chosen, keys are not). */
+  /**
+   * key -> entity_id. With the integration: its entities via the entity registry (names are
+   * user-chosen, translation keys are not). Without: level_entity / volume_entity / inlet_entity /
+   * outlet_entity or an `entities` map, any sensor of any integration. The map overrides.
+   */
   _resolve() {
     const h = this._hass, c = this._config;
-    if (c.entities) return { ...c.entities };
-    const dev = c.device || h.entities?.[c.entity]?.device_id;
-    if (!dev) return null;
     const out = {};
-    for (const [id, e] of Object.entries(h.entities || {})) {
-      if (e.device_id === dev && e.platform === DOMAIN && e.translation_key) out[e.translation_key] = id;
+    const dev = c.device || h.entities?.[c.entity]?.device_id;
+    if (dev) {
+      for (const [id, e] of Object.entries(h.entities || {})) {
+        if (e.device_id === dev && e.platform === DOMAIN && e.translation_key) out[e.translation_key] = id;
+      }
     }
-    return out.level ? out : null;
+    const own = { level: c.level_entity, volume: c.volume_entity, water_in: c.inlet_entity, water_out: c.outlet_entity, ...(c.entities || {}) };
+    for (const [k, id] of Object.entries(own)) if (id) out[k] = id;
+    return out.level || out.volume ? out : null;
   }
 
   _build() {
@@ -541,13 +574,28 @@ class EcoWaterTankCard extends HTMLElement {
       this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card><div class="warn">${this._t("missing")}</div></ha-card>`;
       return;
     }
-    this._chips = CHIPS.map(([k, srcs, icon, cls]) => {
-      const src = srcs && srcs.find((s) => ids[s]);
-      if (k === "net" ? !((ids.water_in_today || ids.water_in_estimated_today) && ids.water_out_today) : !src) return null;
-      const label = (k === "net" ? this._t("net") : this._name(src)).replace(/\s*\(.*\)\s*$/, "");
-      return { k, src, html: `<div class="c ${cls}" data-tile="${k}"><ha-icon icon="${icon}"></ha-icon><div class="t"><span class="l">${label}</span>
-        <span class="v"><i data-e="${k}"></i><span data-v="${k}"></span><u data-u="${k}"></u></span></div></div>` };
-    }).filter(Boolean);
+    const tile = (k, icon, cls, label) => `<div class="c ${cls}" data-tile="${k}"><ha-icon icon="${icon}"></ha-icon><div class="t"><span class="l">${label}</span>
+        <span class="v"><i data-e="${k}"></i><span data-v="${k}"></span><u data-u="${k}"></u></span></div></div>`;
+    const clean = (t) => t.replace(/\s*\(.*\)\s*$/, "");
+    const list = [];
+    for (const [k, srcs, icon, cls] of CHIPS) {
+      if (k === "net") continue;
+      const src = srcs.find((x) => ids[x]);
+      let derived = null, kind = k === "rain_efficiency" ? "pct" : "vol";
+      // no "today" sensor (card used without the integration): derive it from a cumulative counter
+      if (!src && (k === "in_today" || k === "out_today")) {
+        const w = k === "in_today" ? "water_in" : "water_out";
+        if (this._unitKind(w) === "vol") derived = w;
+      }
+      if (!src && !derived) continue;
+      if (src && (k === "tot_in" || k === "tot_out") && this._unitKind(src) === "vrate") kind = "rate"; // flow meter: instant flow
+      list.push({ k, src, derived, kind, html: tile(k, icon, cls, clean(derived ? this._t(k) : this._name(src))) });
+    }
+    if (list.some((x) => x.k === "in_today") && list.some((x) => x.k === "out_today")) {
+      const n = CHIPS.find((x) => x[0] === "net");
+      list.push({ k: "net", kind: "vol", html: tile("net", n[2], n[3], this._t("net")) });
+    }
+    this._chips = list;
     const canCalib = ids.apply_correction || ids.mark_full;
     this.shadowRoot.innerHTML = `<style>${STYLE}</style>
 <ha-card>
@@ -602,65 +650,182 @@ class EcoWaterTankCard extends HTMLElement {
     return o.photo ? o.tank[1] * VH / 100 + (y - TOP) * (o.tank[3] * VH / 100 / H) : y;
   }
 
-  _num(key) {
+  _st(key) {
     const id = this._ids[key];
-    const s = id && this._hass.states[id];
+    return id ? this._hass.states[id] : undefined;
+  }
+
+  _unitKind(key) { return parseUnit(this._st(key)?.attributes?.unit_of_measurement).kind; }
+
+  /** Value in base units: litres, mm, L/h, mm/h (percent and unknown units untouched). */
+  _num(key) {
+    const s = this._st(key);
     if (!s) return null;
     const v = parseFloat(s.state);
-    return Number.isFinite(v) ? v : null;
+    return Number.isFinite(v) ? v * parseUnit(s.attributes?.unit_of_measurement).f : null;
+  }
+
+  _cfgNum(x) { const n = parseFloat(x); return Number.isFinite(n) ? n : null; }
+
+  /** Display units follow the HA unit system unless `volume_unit` (L, m³, gal, ft³) is set. */
+  _vu() { const u = this._config.volume_unit; return DISPLAY[u] ? u : this._hass.config?.unit_system?.volume === "gal" ? "gal" : "L"; }
+  _fu() { return this._vu() === "gal" ? "gal/min" : "L/min"; }
+  _lu() { return this._hass.config?.unit_system?.length === "mi" ? "in" : "mm"; }
+
+  /** A volume typed in the config (capacity, pump_limit), as litres: in `capacity_unit`, else the unit of the volume sensor, else the display unit. */
+  _cfgVol(x) {
+    const n = this._cfgNum(x);
+    if (n == null) return null;
+    const sensor = ["volume", "level"].map((k) => parseUnit(this._st(k)?.attributes?.unit_of_measurement)).find((u) => u.kind === "vol");
+    return n * (VOLUME[this._config.capacity_unit] ?? sensor?.f ?? DISPLAY[this._vu()].f);
+  }
+
+  _cap() { return this._num("capacity") ?? this._cfgVol(this._config.capacity); }
+
+  /** Litres from a volume sensor, or from a level sensor that reads in a volume unit. */
+  _volRaw() {
+    if (this._ids.volume) { const v = this._num("volume"); if (v != null) return v; }
+    return this._unitKind("level") === "vol" ? this._num("level") : null;
+  }
+
+  /** Fill in %: a % sensor, a calibrated height/distance sensor (level_empty / level_full), litres / capacity. */
+  _pct() {
+    const s = this._st("level"), c = this._config;
+    if (s) {
+      const v = parseFloat(s.state);
+      if (Number.isFinite(v)) {
+        const k = parseUnit(s.attributes?.unit_of_measurement);
+        const lo = this._cfgNum(c.level_empty), hi = this._cfgNum(c.level_full);
+        if (k.kind === "pct") return v;
+        if (lo != null && hi != null && hi !== lo) return (v - lo) / (hi - lo) * 100;
+        if (k.kind === "vol") { const cap = this._cap(); if (cap) return v * k.f / cap * 100; }
+        else { const th = this._cfgNum(c.tank_height); if (th) return v / th * 100; }
+      }
+    }
+    const vr = this._volRaw(), cap = this._cap();
+    return vr != null && cap ? vr / cap * 100 : null;
+  }
+
+  _vol() {
+    const vr = this._volRaw();
+    if (vr != null) return vr;
+    const p = this._pct(), cap = this._cap();
+    return p != null && cap ? p / 100 * cap : null;
+  }
+
+  _capShown() {
+    const cap = this._cap();
+    if (cap) return cap;
+    const vr = this._volRaw(), p = this._pct();
+    return vr != null && p > 1 ? vr / p * 100 : null;
   }
 
   _fmt(v, d = 0) {
     return v == null ? "–" : v.toLocaleString(this._hass.language, { maximumFractionDigits: d, minimumFractionDigits: d });
   }
 
-  /**
-   * Rain intensity 0..1 and the time it last rained.
-   * Source: `rain_entity` (mm/h sensor, or cumulative mm gauge) else the integration's
-   * "rainwater collected" sensor (litres, scaled to the tank capacity).
-   */
-  _trackRain() {
-    const h = this._hass, c = this._config, now = Date.now();
-    const id = c.rain_entity || this._ids.rain_in;
-    const st = id && h.states[id];
-    if (!st) return;
-    const v = parseFloat(st.state);
-    if (!Number.isFinite(v)) return;
-    const unit = st.attributes?.unit_of_measurement || "";
-    const isRate = /\/h$/.test(unit);
-    const toI = (amount, hours) => {
-      // amount per hour -> 0..1 : 10 mm/h is "heavy"; litres: 10 % of capacity per hour
-      const perH = amount / Math.max(hours, 0.02);
-      const heavy = c.rain_entity ? 10 : Math.max(10, (this._num("capacity") || 1000) * 0.1);
-      return Math.min(1, perH / heavy);
-    };
-    const r = (this._rain ||= { last: null, at: 0, i: 0, rainAt: 0, rate: null });
-    r.rate = isRate ? { v, unit } : null;
-    if (isRate) {
-      r.i = v > 0 ? Math.min(1, v / 10) : 0;
-      if (v > 0) r.rainAt = now;
-    } else if (r.last == null) {
-      // first sight: recent change means it is probably raining right now
-      const age = now - new Date(st.last_changed || 0).getTime();
-      if (age < 10 * 60000) { r.rainAt = now; r.i = 0.3; }
-    } else if (v > r.last) {
-      const hours = r.at ? (now - r.at) / 3600000 : 0.1;
-      r.i = Math.max(0.1, toI(v - r.last, hours));
-      r.rainAt = now;
-    }
-    if (r.last == null || v !== r.last) r.at = now;
-    r.last = v;
+  /** Litres -> text in the display unit. */
+  _fv(L) {
+    if (L == null) return "–";
+    const f = DISPLAY[this._vu()], x = L / f.f;
+    return this._fmt(x, f.d === 2 ? (Math.abs(x) < 10 ? 2 : 1) : f.d);
   }
 
-  /** The pump runs while the "water out" counter keeps rising. */
+  /** Litres since local midnight from a cumulative counter, via the recorder (first value seen as a fallback). */
+  _today(key) {
+    const id = this._ids[key], v = this._num(key);
+    if (!id || v == null) return null;
+    const day = new Date().toLocaleDateString("sv");
+    const b = (this._base[id] ||= { day: null, v: 0 });
+    if (b.day !== day) { b.day = day; b.v = v; this._loadBase(id, key, b, day); }
+    return v >= b.v ? v - b.v : v; // a counter that restarted counts from zero
+  }
+
+  async _loadBase(id, key, b, day) {
+    try {
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const res = await this._hass.callWS({
+        type: "history/history_during_period", start_time: start.toISOString(), end_time: new Date().toISOString(),
+        entity_ids: [id], include_start_time_state: true, significant_changes_only: false, minimal_response: true, no_attributes: true,
+      });
+      const first = parseFloat(res?.[id]?.[0]?.s);
+      const f = parseUnit(this._st(key)?.attributes?.unit_of_measurement).f;
+      if (Number.isFinite(first) && b.day === day) { b.v = first * f; this._update(); }
+    } catch (e) { /* no recorder: the first value seen today stays the baseline */ }
+  }
+
+  /**
+   * Rain intensity 0..1 and the time it last rained. Sources, any of them: `rain_entity`
+   * (mm/h or in/h sensor, cumulative mm / in gauge, or a binary rain sensor), `weather_entity`,
+   * else the integration's "rainwater collected" sensor (litres, scaled to the tank capacity).
+   */
+  _trackRain() {
+    const c = this._config, now = Date.now();
+    const srcs = [c.rain_entity, c.weather_entity].filter(Boolean);
+    if (!srcs.length && this._ids.rain_in) srcs.push(this._ids.rain_in);
+    const r = (this._rain ||= { i: 0, rainAt: 0, rate: null, s: {} });
+    r.rate = null;
+    for (const id of srcs) {
+      const s = (r.s[id] ||= { last: null, at: 0, i: 0, rainAt: 0 });
+      this._rainOf(id, s, now, r);
+      if (s.rainAt >= r.rainAt) { r.rainAt = s.rainAt; r.i = s.i; }
+    }
+  }
+
+  _rainOf(id, s, now, r) {
+    const st = this._hass.states[id];
+    if (!st) return;
+    const dom = id.split(".")[0];
+    if (dom === "weather") {
+      const i = WEATHER_RAIN[st.state] ?? 0;
+      if (i > 0) { s.i = i; s.rainAt = now; }
+      return;
+    }
+    if (dom === "binary_sensor" || dom === "input_boolean" || dom === "switch") {
+      if (st.state === "on") { s.i = 0.5; s.rainAt = now; }
+      return;
+    }
+    const v = parseFloat(st.state);
+    if (!Number.isFinite(v)) return;
+    const k = parseUnit(st.attributes?.unit_of_measurement);
+    if (k.kind === "lrate") {
+      const mmh = v * k.f, inch = this._lu() === "in";
+      r.rate = { v: mmh / (inch ? 25.4 : 1), unit: `${inch ? "in" : "mm"}/h` };
+      s.i = Math.min(1, mmh / 10);
+      if (mmh > 0) s.rainAt = now;
+      return;
+    }
+    // cumulative gauge (mm, cm, in), or the integration's litres: intensity from how fast it rises
+    const x = k.kind === "len" ? v * k.f : v;
+    const heavy = k.kind === "len" ? 10 : Math.max(10, (this._cap() || 1000) * 0.1); // 10 mm/h, or 10 % of capacity per hour
+    if (s.last == null) {
+      // first sight: a recent change means it is probably raining right now
+      if (now - new Date(st.last_changed || 0).getTime() < 10 * 60000) { s.rainAt = now; s.i = 0.3; }
+    } else if (x > s.last) {
+      s.i = Math.max(0.1, Math.min(1, ((x - s.last) / Math.max(s.at ? (now - s.at) / 3600000 : 0.1, 0.02)) / heavy));
+      s.rainAt = now;
+    }
+    if (s.last == null || x !== s.last) s.at = now;
+    s.last = x;
+  }
+
+  /** The pump: `pump_entity` (switch, or a power sensor above `pump_threshold` W), a flow meter above 0, or a rising "water out" counter. */
   _trackPump() {
-    const h = this._hass, now = Date.now();
+    const h = this._hass, c = this._config, now = Date.now();
+    const p = (this._pump ||= { last: null, at: 0, on: false });
+    if (c.pump_entity) {
+      const st = h.states[c.pump_entity];
+      if (!st) return;
+      const n = parseFloat(st.state);
+      p.on = Number.isFinite(n) ? n > (this._cfgNum(c.pump_threshold) ?? 5) : st.state === "on";
+      return;
+    }
     const id = this._ids.water_out || this._ids.water_out_today;
     const st = id && h.states[id];
     if (!st) return;
     const v = parseFloat(st.state);
     if (!Number.isFinite(v)) return;
-    const p = (this._pump ||= { last: null, at: 0 });
+    if (parseUnit(st.attributes?.unit_of_measurement).kind === "vrate") { p.on = v > 0; return; }
     if (p.last == null) { if (now - new Date(st.last_changed || 0).getTime() < PUMP_MS) p.at = now; }
     else if (v > p.last) p.at = now;
     p.last = v;
@@ -680,8 +845,8 @@ class EcoWaterTankCard extends HTMLElement {
     if (Number.isFinite(el)) phase = el > 4 ? "day" : el > -4 ? "dusk" : "night";
     else if (sun) phase = sun.state === "above_horizon" ? "day" : "night";
     else { const hr = new Date().getHours(); phase = hr >= 8 && hr < 19 ? "day" : hr >= 6 && hr < 21 ? "dusk" : "night"; }
-    const pumping = this._pump && now - this._pump.at < PUMP_MS;
-    const lvl = this._num("level");
+    const pumping = !!this._pump && (this._pump.on || now - this._pump.at < PUMP_MS);
+    const lvl = this._pct();
     const overflowing = raining && lvl != null && lvl >= 97.5;
     sc.className = `scene ${phase}${this._photo().photo ? " photo" : ""}${raining ? " rainy" : ""}${raining && i >= 0.8 ? " storm" : ""}${pumping ? " pumping" : ""}${overflowing ? " overflowing" : ""}`;
     const n = raining ? Math.round(10 + i * (DROPS - 10)) : 0;
@@ -703,16 +868,19 @@ class EcoWaterTankCard extends HTMLElement {
   }
 
   _update() {
-    const r = this.shadowRoot, ids = this._ids, h = this._hass;
+    const r = this.shadowRoot, ids = this._ids, h = this._hass, c = this._config;
     const $ = (q) => r.querySelector(q);
     const set = (q, v) => { const e = $(q); if (e && e.textContent !== v) e.textContent = v; };
+    const vu = this._vu();
 
-    const lvl = this._num("level"), vol = this._num("volume"), cap = this._num("capacity");
+    const lvl = this._pct(), vol = this._vol(), cap = this._capShown();
     const p = lvl == null ? 0 : Math.max(0, Math.min(100, lvl));
-    set("[data-title]", this._config.name || h.states[ids.level]?.attributes?.friendly_name?.replace(/\s+Level$/i, "") || "Eco Water Tank");
+    const main = h.states[ids.level] || h.states[ids.volume];
+    set("[data-title]", c.name || main?.attributes?.friendly_name?.replace(/\s+(Level|Niveau)$/i, "") || this._t("title"));
     set("[data-pct]", this._fmt(lvl, 1));
-    set("[data-vol]", this._fmt(vol));
-    set("[data-cap]", cap == null ? "" : `${this._name("capacity").replace(/\s*\(.*\)\s*$/, "")}: ${this._fmt(cap)} L`);
+    set("[data-vol]", this._fv(vol));
+    set("[data-vu]", vu);
+    set("[data-cap]", cap == null ? "" : `${ids.capacity ? this._name("capacity").replace(/\s*\(.*\)\s*$/, "") : this._t("capacity")}: ${this._fv(cap)} ${vu}`);
     set("[data-chip]", lvl == null ? this._loc("state.default.unknown", "?") : lvl < 15 ? this._t("low") : lvl > 95 ? this._t("high") : this._t("ok"));
     const card = $("ha-card");
     card.classList.toggle("low", lvl != null && lvl < 15);
@@ -737,26 +905,40 @@ class EcoWaterTankCard extends HTMLElement {
     $("[data-stream2]").setAttribute("d", sd);
     $("[data-float]").setAttribute("y", (sy - 5).toFixed(1));
     $("[data-cable]").setAttribute("y2", (sy - 5).toFixed(1));
-    const usable = this._num("usable_volume");
+    const lim = this._cfgVol(c.pump_limit);
+    const usable = this._num("usable_volume") ?? (lim != null && vol != null ? Math.max(0, vol - lim) : null);
     const ul = $("[data-ulim]"), ut = $("[data-utag]");
     if (usable != null && vol > 0) {
       const ly = TOP + H * (1 - (p * (1 - usable / vol)) / 100);
       ul.setAttribute("y1", ly.toFixed(1)); ul.setAttribute("y2", ly.toFixed(1)); ul.style.opacity = ".8";
       ut.style.display = "block"; if (!this._photo().photo) ut.style.top = `${(ly / 320 * 100).toFixed(1)}%`;
-      ut.innerHTML = `${this._name("usable_volume")}<b>${this._fmt(usable)} L</b>`;
+      ut.innerHTML = `${ids.usable_volume ? this._name("usable_volume") : this._t("usable")}<b>${this._fv(usable)} ${vu}</b>`;
     } else { ul.style.opacity = "0"; ut.style.display = "none"; }
 
+    // data chips: litres (any volume unit), flow (L/min, m³/h, gpm...), %, and today's totals
     const estimated = (id) => !!(id && h.states[id]?.attributes?.estimated);
-    const inKey = ids.water_in_today ? "water_in_today" : "water_in_estimated_today";
-    const net = (this._num(inKey) ?? NaN) - (this._num("water_out_today") ?? NaN);
-    for (const c of this._chips || []) {
-      let v, unit = "L", est, cls = "";
-      if (c.k === "net") { v = Number.isFinite(net) ? net : null; est = estimated(ids[inKey]); cls = v == null ? "" : v >= 0 ? "pos" : "neg"; }
-      else { v = this._num(c.src); est = estimated(ids[c.src]); if (c.k === "rain_efficiency") unit = "%"; }
-      set(`[data-v="${c.k}"]`, v == null ? "–" : this._fmt(v));
-      set(`[data-u="${c.k}"]`, v == null ? "" : unit === "%" ? "%" : " L");
-      set(`[data-e="${c.k}"]`, est ? "≈" : "");
-      $(`[data-v="${c.k}"]`).className = cls;
+    const chips = this._chips || [];
+    const vals = {};
+    for (const x of chips) {
+      if (x.k === "net") continue;
+      vals[x.k] = x.kind === "pct" || x.kind === "rate" ? this._num(x.src) : x.derived ? this._today(x.derived) : this._num(x.src);
+    }
+    const inChip = chips.find((x) => x.k === "in_today");
+    for (const x of chips) {
+      let v, est, cls = "", text, unit;
+      if (x.k === "net") {
+        const a = vals.in_today, b = vals.out_today;
+        v = a != null && b != null ? a - b : null;
+        est = estimated(ids[inChip?.src]);
+        cls = v == null ? "" : v >= 0 ? "pos" : "neg";
+      } else { v = vals[x.k]; est = estimated(ids[x.src]); }
+      if (x.kind === "pct") { text = v == null ? "–" : this._fmt(v); unit = "%"; }
+      else if (x.kind === "rate") { text = v == null ? "–" : this._fmt(v / 60 / DISPLAY[this._vu() === "gal" ? "gal" : "L"].f, 1); unit = ` ${this._fu()}`; }
+      else { text = this._fv(v); unit = ` ${vu}`; }
+      set(`[data-v="${x.k}"]`, text);
+      set(`[data-u="${x.k}"]`, v == null ? "" : unit);
+      set(`[data-e="${x.k}"]`, est ? "≈" : "");
+      $(`[data-v="${x.k}"]`).className = cls;
     }
 
     // number inputs: show the pending value, but never overwrite one being edited
@@ -849,11 +1031,30 @@ class EcoWaterTankCardEditor extends HTMLElement {
     this._btn.textContent = this._t("import");
     this._form.hass = this._hass;
     this._form.data = this._config;
+    const ent = (domain) => ({ entity: { domain } });
+    const num = { number: { mode: "box", step: "any" } };
     this._form.schema = [
-      { name: "device", label: "Device", selector: { device: { integration: DOMAIN } } },
+      { name: "device", label: "Device (Eco Water Tank integration)", selector: { device: { integration: DOMAIN } } },
       { name: "name", label: "Name (optional)", selector: { text: {} } },
-      { name: "rain_entity", label: "Rain sensor (optional: mm/h, or cumulative mm)", selector: { entity: { domain: "sensor" } } },
-      { name: "sun_entity", label: "Sun entity (optional, default sun.sun)", selector: { entity: { domain: "sun" } } },
+      {
+        type: "expandable", name: "", title: "Without the integration: your own entities",
+        schema: [
+          { name: "level_entity", label: "Level sensor (%, height/distance in m, cm, mm, in, ft, or volume in L, m³, gal...)", selector: ent(["sensor", "number", "input_number"]) },
+          { name: "level_empty", label: "Level sensor reading when the tank is empty (height or distance sensors)", selector: num },
+          { name: "level_full", label: "Level sensor reading when the tank is full", selector: num },
+          { name: "volume_entity", label: "Volume sensor (L, m³, gal, ft³...)", selector: ent(["sensor", "number", "input_number"]) },
+          { name: "capacity", label: "Capacity (when the sensors give no volume)", selector: num },
+          { name: "capacity_unit", label: "Unit of capacity and pump limit (default: unit of the volume sensor, else display unit)", selector: { select: { options: ["L", "m³", "gal", "ft³"], mode: "dropdown" } } },
+          { name: "pump_limit", label: "Volume the pump can never draw (optional)", selector: num },
+          { name: "inlet_entity", label: "Water in: total (L, m³, gal...) or flow (L/min, m³/h, gpm...)", selector: ent("sensor") },
+          { name: "outlet_entity", label: "Water out: total or flow", selector: ent("sensor") },
+          { name: "pump_entity", label: "Pump (switch, or power sensor in W)", selector: ent(["switch", "binary_sensor", "input_boolean", "sensor"]) },
+          { name: "weather_entity", label: "Weather entity (rain)", selector: ent("weather") },
+        ],
+      },
+      { name: "volume_unit", label: "Display unit (default: your unit system)", selector: { select: { options: ["L", "m³", "gal", "ft³"], mode: "dropdown" } } },
+      { name: "rain_entity", label: "Rain sensor (optional: mm/h or in/h, cumulative mm or in, or a rain binary sensor)", selector: ent(["sensor", "binary_sensor"]) },
+      { name: "sun_entity", label: "Sun entity (optional, default sun.sun)", selector: ent("sun") },
       { name: "image", label: "Photo background, day (optional, e.g. /local/eco-water-tank/day.webp)", selector: { text: {} } },
       { name: "image_night", label: "Photo background, night (optional)", selector: { text: {} } },
     ];
