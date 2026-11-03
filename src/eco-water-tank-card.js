@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.04";
+const CARD_VERSION = "0.06";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -196,7 +196,7 @@ button:hover { filter:brightness(1.1); } button:active { transform:scale(.97); }
 const TOP = 150, H = 140, GROUND = 112;
 
 const VH = 300; // photo scene height in viewBox units (4:3)
-const PHOTO_DEFAULT = { tank: [31.3, 55.8, 44.2, 30.7], pipe: [[20.4, 7], [15.6, 12.5], [15.6, 57.5], [28.3, 57.5], [33, 57.5]] };
+const PHOTO_DEFAULT = { tank: [31.3, 55.8, 44.2, 30.7], pipe: [[20.4, 7], [15.6, 12.5], [15.6, 57.7], [32.9, 57.7]] };
 const esc = (u) => String(u).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const cut = (s, from, to) => { const a = s.indexOf(from), b = s.indexOf(to); return a < 0 || b < 0 || b < a ? s : s.slice(0, a) + s.slice(b); };
 
@@ -215,6 +215,8 @@ function toPhoto(html, o) {
     .replace("  <!-- overflow stub -->", "  </g>\n  <!-- overflow stub -->");
   html = cut(html, "  <!-- overflow stub -->", "  <!-- rain -->");
   html = html.replace(/[^\n]*url\(#vign\)[^\n]*\n/, "").replace(/[^\n]*filter="url\(#grain\)" opacity="\.12"[^\n]*\n/, "");
+  const stream = html.match(/  <path class="stream" data-stream[\s\S]*?<\/g>\n(?=  <!-- float)/)[0];
+  html = html.replace(stream, "").replace("  <!-- rain -->", `${stream.replace(/cx="141"/g, 'cx="0"')}  <!-- rain -->`);
   const layers = `
   <image class="photo-d" href="${esc(o.image)}" width="400" height="${VH}" preserveAspectRatio="xMidYMid slice"/>
   ${o.night ? `<image class="photo-n" href="${esc(o.night)}" width="400" height="${VH}" preserveAspectRatio="xMidYMid slice"/>` : ""}
@@ -719,8 +721,18 @@ class EcoWaterTankCard extends HTMLElement {
     // water surface and everything that rides on it
     const sy = TOP + H * (1 - p / 100);
     $("[data-lvl]").style.transform = `translateY(${(H * (1 - p / 100)).toFixed(1)}px)`;
-    $("[data-isplash]").style.transform = `translateY(${sy.toFixed(1)}px)`;
-    const sd = `M129 151C137 151 141 ${(151 + Math.max(sy, 158)) / 2 - 8} 141 ${Math.max(sy, 158).toFixed(1)}`;
+    if (!this._photo().photo) $("[data-isplash]").style.transform = `translateY(${sy.toFixed(1)}px)`;
+    const ph = this._photo();
+    let sd;
+    if (ph.photo) {
+      // from the mouth of the pipe, falling straight onto the water surface (picture units)
+      const [mx, my] = ph.pipe[ph.pipe.length - 1];
+      const x0 = mx * 4, y0 = my * VH / 100, x1 = x0 + 5, y1 = Math.max(this._ty(sy), y0 + 6);
+      sd = `M${x0 - 3} ${y0}C${x0 + 3} ${y0} ${x1} ${y0 + 2} ${x1} ${(y0 + y1) / 2}S${x1} ${y1 - 2} ${x1} ${y1.toFixed(1)}`;
+      $("[data-isplash]").setAttribute("transform", `translate(${x1} ${y1.toFixed(1)})`);
+    } else {
+      sd = `M129 151C137 151 141 ${(151 + Math.max(sy, 158)) / 2 - 8} 141 ${Math.max(sy, 158).toFixed(1)}`;
+    }
     $("[data-stream]").setAttribute("d", sd);
     $("[data-stream2]").setAttribute("d", sd);
     $("[data-float]").setAttribute("y", (sy - 5).toFixed(1));
