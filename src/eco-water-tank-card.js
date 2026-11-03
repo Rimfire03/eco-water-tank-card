@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.02";
+const CARD_VERSION = "0.04";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -80,7 +80,7 @@ ha-card.mid { --tank:#e09a2f; --tank2:#ffd073; --tankd:#7a4a0c; }
 .tint-rain { opacity:0; transition:opacity 1.5s; } .rainy .tint-rain { opacity:.4; }
 .mtn { fill:var(--mtn); } .grass3 { fill:var(--grass3); }
 .night .wg { filter:brightness(.62) saturate(.9); } .dusk .wg { filter:brightness(.88); } .wg { transition:filter 2s; }
-.photo .p-wx { left:2%; top:2%; width:28%; } .photo .p-a { left:31%; top:2%; width:27%; } .photo .p-b { left:59%; top:2%; width:20%; }
+.photo .utag { font-size:2.7cqw; padding:.9cqw 2.4cqw; } .photo .p-wx { left:2%; top:2%; width:28%; } .photo .p-a { left:31%; top:2%; width:27%; } .photo .p-b { left:59%; top:2%; width:20%; }
 .photo .s-l1, .photo .s-l2, .photo .s-l3 { left:2%; width:25%; } .photo .s-l1 { top:61%; } .photo .s-l2 { top:73%; } .photo .s-l3 { top:85%; }
 .photo .s-r1, .photo .s-r2, .photo .s-r3 { left:80%; width:19%; } .photo .s-r1 { top:62%; } .photo .s-r2 { top:73%; } .photo .s-r3 { top:84%; }
 
@@ -170,7 +170,7 @@ ha-card.mid { --tank:#e09a2f; --tank2:#ffd073; --tankd:#7a4a0c; }
 .tankinfo { position:absolute; left:50.5%; top:70%; transform:translate(-50%,-50%); text-align:center; color:#fff;
   text-shadow:0 1px 5px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.6); pointer-events:none; width:24%; }
 .tankinfo .pc { font-size:9cqw; font-weight:800; line-height:1; } .tankinfo .pc small { font-size:4.2cqw; font-weight:700; margin-left:.4cqw; }
-.tankinfo .vl { font-size:3.8cqw; font-weight:700; margin-top:.8cqw; } .tankinfo .cp { font-size:2.3cqw; opacity:.92; margin-top:.4cqw; }
+.tankinfo .vl { font-size:3.8cqw; font-weight:700; margin-top:.8cqw; } .tankinfo .cp { font-size:2.3cqw; opacity:.92; margin-top:.4cqw; white-space:nowrap; margin-inline:-6cqw; }
 .utag { position:absolute; left:30%; transform:translate(0,-50%); font-size:2.1cqw; padding:.6cqw 1.5cqw; border-radius:2cqw;
   background:rgba(8,16,30,.6); color:#fff; border:1px solid rgba(255,255,255,.18); white-space:nowrap; display:none; }
 .utag b { margin-left:.8cqw; }
@@ -578,7 +578,8 @@ class EcoWaterTankCard extends HTMLElement {
     if (o.photo) {
       const [x, y, w, h] = o.tank;
       Object.assign(root.querySelector(".tankinfo").style, { left: `${x + w / 2}%`, top: `${y + h * 0.55}%` });
-      root.querySelector("[data-utag]").style.left = `${x + 1.5}%`;
+      // usable volume: pill centered just under the tank (below the outer wall, ~90.5% of the picture)
+      Object.assign(root.querySelector("[data-utag]").style, { left: `${x + w / 2}%`, top: "91.8%", transform: "translate(-50%,0)" });
     }
   }
 
@@ -729,7 +730,7 @@ class EcoWaterTankCard extends HTMLElement {
     if (usable != null && vol > 0) {
       const ly = TOP + H * (1 - (p * (1 - usable / vol)) / 100);
       ul.setAttribute("y1", ly.toFixed(1)); ul.setAttribute("y2", ly.toFixed(1)); ul.style.opacity = ".8";
-      ut.style.display = "block"; ut.style.top = `${(this._ty(ly) / (this._photo().photo ? VH : 320) * 100).toFixed(1)}%`;
+      ut.style.display = "block"; if (!this._photo().photo) ut.style.top = `${(ly / 320 * 100).toFixed(1)}%`;
       ut.innerHTML = `${this._name("usable_volume")}<b>${this._fmt(usable)} L</b>`;
     } else { ul.style.opacity = "0"; ut.style.display = "none"; }
 
