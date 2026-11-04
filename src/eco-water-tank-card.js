@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.14";
+const CARD_VERSION = "0.15";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -289,7 +289,8 @@ const TOP = 150, H = 140, GROUND = 112;
 
 const VH = 300; // photo scene height in viewBox units (4:3)
 const PHOTO_DEFAULT = { tank: [31.3, 55.8, 44.2, 30.7], pipe: [[20.4, 7], [15.6, 12.5], [15.6, 57.7], [32.9, 57.7]] };
-const esc = (u) => String(u).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+// every entity name / config value that reaches innerHTML goes through this (& < > " ')
+const esc = (u) => String(u).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const cut = (s, from, to) => { const a = s.indexOf(from), b = s.indexOf(to); return a < 0 || b < 0 || b < a ? s : s.slice(0, a) + s.slice(b); };
 
 /** Keep the dynamic layers (rain, water, pipe flow, float) and drop the drawn scenery for a photo background. */
@@ -651,7 +652,7 @@ class EcoWaterTankCard extends HTMLElement {
       this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card><div class="warn">${this._t("missing")}</div></ha-card>`;
       return;
     }
-    const tile = (k, icon, cls, label) => `<div class="c ${cls}" data-tile="${k}"><ha-icon icon="${icon}"></ha-icon><div class="t"><span class="l">${label}</span>
+    const tile = (k, icon, cls, label) => `<div class="c ${cls}" data-tile="${k}"><ha-icon icon="${icon}"></ha-icon><div class="t"><span class="l">${esc(label)}</span>
         <span class="v"><i data-e="${k}"></i><span data-v="${k}"></span><u data-u="${k}"></u></span></div></div>`;
     const clean = (t) => t.replace(/\s*\(.*\)\s*$/, "").replace(/\s+(estimée?s?|estimé|estimated)(?=\s|$)/gi, "").replace(/\s{2,}/g, " ").trim();
     const list = [];
@@ -681,14 +682,14 @@ class EcoWaterTankCard extends HTMLElement {
   ${canCalib ? `<details><summary>${this._t("calib")}</summary>
     <div class="hint">${this._t("hint")}</div>
     <div class="row">
-      ${ids.calibrate_volume ? `<label class="f">${this._name("calibrate_volume")}<input type="number" min="0" step="1" data-num="calibrate_volume"></label>` : ""}
-      ${ids.calibrate_percent ? `<label class="f">${this._name("calibrate_percent")}<input type="number" min="0" max="100" step="0.1" data-num="calibrate_percent"></label>` : ""}
-      ${ids.apply_correction ? `<button class="main" data-btn="apply_correction">${this._name("apply_correction")}</button>` : ""}
+      ${ids.calibrate_volume ? `<label class="f">${esc(this._name("calibrate_volume"))}<input type="number" min="0" step="1" data-num="calibrate_volume"></label>` : ""}
+      ${ids.calibrate_percent ? `<label class="f">${esc(this._name("calibrate_percent"))}<input type="number" min="0" max="100" step="0.1" data-num="calibrate_percent"></label>` : ""}
+      ${ids.apply_correction ? `<button class="main" data-btn="apply_correction">${esc(this._name("apply_correction"))}</button>` : ""}
     </div>
     <div class="row">
-      ${ids.mark_full ? `<button data-btn="mark_full">${this._name("mark_full")}</button>` : ""}
-      ${ids.mark_empty ? `<button data-btn="mark_empty">${this._name("mark_empty")}</button>` : ""}
-      ${ids.share_tank ? `<button data-btn="share_tank">${this._name("share_tank")}</button>` : ""}
+      ${ids.mark_full ? `<button data-btn="mark_full">${esc(this._name("mark_full"))}</button>` : ""}
+      ${ids.mark_empty ? `<button data-btn="mark_empty">${esc(this._name("mark_empty"))}</button>` : ""}
+      ${ids.share_tank ? `<button data-btn="share_tank">${esc(this._name("share_tank"))}</button>` : ""}
     </div></details>` : ""}
 </ha-card>`;
     const root = this.shadowRoot;
@@ -1182,7 +1183,7 @@ class EcoWaterTankCard extends HTMLElement {
       const ly = TOP + H * (1 - (p * (1 - usable / vol)) / 100);
       ul.setAttribute("y1", ly.toFixed(1)); ul.setAttribute("y2", ly.toFixed(1)); ul.style.opacity = ".8";
       ut.style.display = "block"; if (!this._photo().photo) ut.style.top = `${(ly / 320 * 100).toFixed(1)}%`;
-      ut.innerHTML = `${ids.usable_volume ? this._name("usable_volume") : this._t("usable")}<b>${this._fv(usable)} ${vu}</b>`;
+      ut.innerHTML = `${esc(ids.usable_volume ? this._name("usable_volume") : this._t("usable"))}<b>${this._fv(usable)} ${vu}</b>`;
     } else { ul.style.opacity = "0"; ut.style.display = "none"; }
 
     // data chips: litres (any volume unit), flow (L/min, m³/h, gpm...), %, and today's totals
