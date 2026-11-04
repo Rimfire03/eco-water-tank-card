@@ -1,6 +1,6 @@
 /* Eco Water Tank card — companion for the eco_water_tank integration. No dependencies. */
 
-const CARD_VERSION = "0.11";
+const CARD_VERSION = "0.14";
 console.info(
   `%c ECO-WATER-TANK-CARD %c v${CARD_VERSION} `,
   "color: white; background: #2f8fe0; font-weight: 700; border-radius: 3px 0 0 3px;",
@@ -12,10 +12,12 @@ console.info(
 const T = {
   en: { net: "Net today", calib: "Calibration", low: "Low", ok: "OK", high: "Full",
     capacity: "Capacity", usable: "Usable volume", in_today: "In today", out_today: "Out today", title: "Water tank",
+    hist: "Fill history", r24h: "24 h", r7d: "7 d", r30d: "30 d", min: "Min", max: "Max", avg: "Avg", now: "Now", nodata: "No history yet", loading: "Loading…",
     missing: "Select an Eco Water Tank device, or set level_entity / volume_entity.",
     hint: "Type the real volume or fill, then Apply. Or mark the tank full/empty right now." },
   fr: { net: "Bilan du jour", calib: "Calibration", low: "Bas", ok: "OK", high: "Plein",
     capacity: "Capacité", usable: "Volume utilisable", in_today: "Entrée du jour", out_today: "Sortie du jour", title: "Cuve d'eau",
+    hist: "Historique de remplissage", r24h: "24 h", r7d: "7 j", r30d: "30 j", min: "Min", max: "Max", avg: "Moy.", now: "Actuel", nodata: "Pas encore d'historique", loading: "Chargement…",
     missing: "Choisis un appareil Eco Water Tank, ou renseigne level_entity / volume_entity.",
     hint: "Saisis le volume ou le remplissage réel, puis Appliquer. Ou marque la cuve pleine/vide maintenant." },
 };
@@ -251,6 +253,22 @@ ha-card.mid { --tank:#e09a2f; --tank2:#ffd073; --tankd:#7a4a0c; }
 .ftag { position:absolute; left:38%; transform:translate(-50%,0); font-size:2.2cqw; padding:.5cqw 1.5cqw; border-radius:2cqw; font-weight:700;
   background:rgba(8,16,30,.6); color:#fff; border:1px solid rgba(255,255,255,.18); white-space:nowrap; display:none; }
 
+.hbtn { position:absolute; z-index:3; right:2%; top:14%; width:7.8cqw; height:7.8cqw; padding:0; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:rgba(8,16,30,.62); border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(3px); cursor:pointer; color:#fff; }
+.hbtn:hover { background:rgba(8,16,30,.8); } .hbtn ha-icon { --mdc-icon-size:4.6cqw; color:var(--tank2); }
+.photo .hbtn { left:81%; right:auto; top:2.4%; }
+.scene.histmode .hbtn { left:auto; right:2.4cqw; top:2.4cqw; }
+.hist { display:none; position:absolute; inset:0; z-index:2; flex-direction:column; padding:2.4cqw 2.4cqw 2cqw; box-sizing:border-box; color:#fff;
+  background:radial-gradient(120% 90% at 50% 0%,#14304a 0%,#0b1624 70%); }
+.histmode .hist { display:flex; } .histmode svg.art, .histmode .c, .histmode .tankinfo, .histmode .utag { visibility:hidden; }
+.hh { display:flex; align-items:center; justify-content:space-between; gap:2cqw; padding-right:10.5cqw; min-height:8cqw; }
+.ht { font-size:3.4cqw; font-weight:700; } .hr { display:flex; gap:1.2cqw; }
+.hr button { font:inherit; font-size:2.4cqw; font-weight:600; padding:.8cqw 2cqw; border-radius:2cqw; cursor:pointer; color:#fff; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18); }
+.hr button.on { background:var(--tank); border-color:var(--tank); }
+.hsvg { width:100%; height:auto; flex:none; touch-action:pan-y; }
+.hs { margin-top:auto; display:grid; grid-template-columns:repeat(4,1fr); gap:1.6cqw; }
+.hc { background:rgba(8,16,30,.55); border:1px solid rgba(255,255,255,.14); border-radius:2.4cqw; padding:.8cqw 1.4cqw; text-align:center; line-height:1.15; }
+.hc span { display:block; font-size:1.9cqw; opacity:.78; } .hc b { font-size:3cqw; }
 details { margin:14px 16px 0; border-top:1px solid var(--divider-color); padding-top:10px; }
 summary { cursor:pointer; font-size:.9rem; font-weight:600; color:var(--primary-text-color); list-style:none; }
 summary::before { content:"▸ "; } details[open] summary::before { content:"▾ "; }
@@ -545,6 +563,12 @@ function scene(opt = {}) {
 @CHIPS@
 <div class="tankinfo"><div class="pc"><span data-pct>–</span><small>%</small></div><div class="vl"><span data-vol>–</span> <span data-vu>L</span></div><div class="cp" data-cap></div></div>
 <div class="utag" data-utag></div>
+<button class="hbtn" data-hbtn type="button"><ha-icon icon="mdi:chart-line"></ha-icon></button>
+<div class="hist" data-hist>
+  <div class="hh"><span class="ht" data-ht></span><span class="hr" data-hr></span></div>
+  <svg class="hsvg" data-hsvg viewBox="0 0 400 200" role="img"></svg>
+  <div class="hs" data-hs></div>
+</div>
 </div>`;
   return opt.photo ? toPhoto(html, opt) : html;
 }
@@ -569,7 +593,12 @@ class EcoWaterTankCard extends HTMLElement {
 
   connectedCallback() {
     // rain / pump stop without any state change: re-evaluate the scene regularly
-    this._timer = setInterval(() => this._ids && this._weather(), 20000);
+    this._timer = setInterval(() => {
+      if (!this._ids) return;
+      this._weather();
+      const c = this._hc?.[this._range];
+      if (this._hist && c && Date.now() - c.t > 300000) this._renderHist(); // keep the open chart fresh
+    }, 20000);
   }
   disconnectedCallback() { clearInterval(this._timer); }
 
@@ -671,6 +700,8 @@ class EcoWaterTankCard extends HTMLElement {
         this._hass.callService("number", "set_value", { entity_id: this._ids[i.dataset.num], value: Number(i.value) });
       }));
     this._drops = [...root.querySelectorAll("[data-drop]")];
+    root.querySelector("[data-hbtn]").addEventListener("click", () => this._toggleHist());
+    this._syncHist();
     // photo mode: follow the tank box with the big numbers and the usable-volume tag
     const o = this._photo();
     if (o.photo) {
@@ -736,18 +767,26 @@ class EcoWaterTankCard extends HTMLElement {
     return this._unitKind("level") === "vol" ? this._num("level") : null;
   }
 
+  /** Fill in % from one raw reading of the level sensor (null when it cannot be known). */
+  _toPct(v, unit) {
+    const k = parseUnit(unit), c = this._config;
+    if (k.kind === "pct") return v;
+    if (!unit && !c.level_empty && !c.level_full && !c.tank_height) return v >= 0 && v <= 100 ? v : null; // a unitless 0-100 sensor is a percentage
+    const lo = this._cfgNum(c.level_empty), hi = this._cfgNum(c.level_full);
+    if (lo != null && hi != null && hi !== lo) return (v - lo) / (hi - lo) * 100;
+    if (k.kind === "vol") { const cap = this._cap(); return cap ? v * k.f / cap * 100 : null; }
+    const th = this._cfgNum(c.tank_height);
+    return th ? v / th * 100 : null;
+  }
+
   /** Fill in %: a % sensor, a calibrated height/distance sensor (level_empty / level_full), litres / capacity. */
   _pct() {
     const s = this._st("level"), c = this._config;
     if (s) {
       const v = parseFloat(s.state);
       if (Number.isFinite(v)) {
-        const k = parseUnit(s.attributes?.unit_of_measurement);
-        const lo = this._cfgNum(c.level_empty), hi = this._cfgNum(c.level_full);
-        if (k.kind === "pct") return v;
-        if (lo != null && hi != null && hi !== lo) return (v - lo) / (hi - lo) * 100;
-        if (k.kind === "vol") { const cap = this._cap(); if (cap) return v * k.f / cap * 100; }
-        else { const th = this._cfgNum(c.tank_height); if (th) return v / th * 100; }
+        const p = this._toPct(v, s.attributes?.unit_of_measurement);
+        if (p != null) return p;
       }
     }
     const vr = this._volRaw(), cap = this._cap();
@@ -955,7 +994,7 @@ class EcoWaterTankCard extends HTMLElement {
     const pumping = !!this._pump && (this._pump.on || now - this._pump.at < PUMP_MS);
     const lvl = this._pct();
     const overflowing = fi > 0 && lvl != null && lvl >= 99.5; // full: the surplus leaves by the overflow
-    sc.className = `scene ${phase}${this._photo().photo ? " photo" : ""}${raining ? " rainy" : ""}${fi > 0 ? " flowing" : ""}${raining && i >= 0.8 ? " storm" : ""}${pumping ? " pumping" : ""}${overflowing ? " overflowing" : ""}`;
+    sc.className = `scene ${phase}${this._photo().photo ? " photo" : ""}${raining ? " rainy" : ""}${fi > 0 ? " flowing" : ""}${raining && i >= 0.8 ? " storm" : ""}${pumping ? " pumping" : ""}${overflowing ? " overflowing" : ""}${this._hist ? " histmode" : ""}`;
     const n = raining ? Math.round(10 + i * (DROPS - 10)) : 0;
     this._drops?.forEach((d, k) => { d.style.opacity = k < n ? (0.5 + i * 0.5).toFixed(2) : "0"; });
     const flow = sc.querySelector("[data-flow]");
@@ -972,6 +1011,130 @@ class EcoWaterTankCard extends HTMLElement {
     if (wi.getAttribute("icon") !== icon) wi.setAttribute("icon", icon);
     sc.querySelector("[data-wxl]").textContent = w(cond);
     sc.querySelector("[data-wxs]").textContent = raining && r.rate ? `${this._fmt(r.rate.v, 1)} ${r.rate.unit}` : "";
+  }
+
+  _toggleHist() {
+    this._hist = !this._hist;
+    this._syncHist();
+    if (this._hist) this._renderHist();
+  }
+
+  _syncHist() {
+    const sc = this.shadowRoot?.querySelector("[data-scene]");
+    if (!sc) return;
+    sc.classList.toggle("histmode", !!this._hist);
+    const b = sc.querySelector("[data-hbtn]");
+    b.querySelector("ha-icon").setAttribute("icon", this._hist ? "mdi:water" : "mdi:chart-line");
+    b.title = b.ariaLabel = this._t("hist");
+    if (this._hist) this._renderHist();
+  }
+
+  /** Fill history (%) over `range`: recorder statistics for the long ranges, raw states for 24 h. */
+  async _histData(range) {
+    const cache = (this._hc ||= {}), now = Date.now();
+    if (cache[range] && now - cache[range].t < 300000) return cache[range].pts;
+    const id = this._ids.level || this._ids.volume;
+    const unit = this._hass.states[id]?.attributes?.unit_of_measurement;
+    const span = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 }[range];
+    const start = new Date(now - span).toISOString(), end = new Date(now).toISOString();
+    let raw = [];
+    if (range !== "24h") {
+      try {
+        const res = await this._hass.callWS({ type: "recorder/statistics_during_period", start_time: start, end_time: end, statistic_ids: [id], period: "hour", types: ["mean"] });
+        raw = (res?.[id] || []).map((q) => [q.start, q.mean]);
+      } catch (e) { /* no statistics: raw history below */ }
+    }
+    if (!raw.length) {
+      try {
+        const res = await this._hass.callWS({
+          type: "history/history_during_period", start_time: start, end_time: end, entity_ids: [id],
+          include_start_time_state: true, significant_changes_only: false, minimal_response: true, no_attributes: true,
+        });
+        raw = (res?.[id] || []).map((q) => [(q.lu ?? q.lc ?? q.last_updated) * 1000, parseFloat(q.s)]);
+      } catch (e) { /* no recorder */ }
+    }
+    let pts = raw.map(([t, v]) => [t, this._toPct(v, unit)]).filter(([t, p]) => Number.isFinite(t) && Number.isFinite(p));
+    if (pts.length > 240) { // bucket mean, at most 240 points
+      const n = Math.ceil(pts.length / 240), out = [];
+      for (let i = 0; i < pts.length; i += n) {
+        const g = pts.slice(i, i + n);
+        out.push([g.reduce((a, q) => a + q[0], 0) / g.length, g.reduce((a, q) => a + q[1], 0) / g.length]);
+      }
+      pts = out;
+    }
+    cache[range] = { t: now, pts };
+    return pts;
+  }
+
+  async _renderHist() {
+    const r = this.shadowRoot;
+    if (!r || !this._hist) return;
+    const range = (this._range ||= "24h");
+    r.querySelector("[data-ht]").textContent = this._t("hist");
+    const hr = r.querySelector("[data-hr]");
+    hr.innerHTML = ["24h", "7d", "30d"].map((k) => `<button type="button" data-r="${k}" class="${k === range ? "on" : ""}">${this._t("r" + k)}</button>`).join("");
+    hr.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { this._range = b.dataset.r; this._renderHist(); }));
+    const svg = r.querySelector("[data-hsvg]");
+    svg.innerHTML = `<text x="200" y="100" text-anchor="middle" fill="#fff" opacity=".7" font-size="11">${this._t("loading")}</text>`;
+    const pts = await this._histData(range);
+    if (this._hist && this._range === range) this._drawHist(pts, range);
+  }
+
+  _drawHist(pts, range) {
+    const r = this.shadowRoot, svg = r.querySelector("[data-hsvg]"), stat = r.querySelector("[data-hs]");
+    if (!pts.length) {
+      svg.innerHTML = `<text x="200" y="100" text-anchor="middle" fill="#fff" opacity=".7" font-size="11">${this._t("nodata")}</text>`;
+      stat.innerHTML = "";
+      return;
+    }
+    const W = 400, L = 34, R = 392, T = 12, B = 170, lang = this._hass.language;
+    const span = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 }[range];
+    const t1 = Date.now(), t0 = t1 - span;
+    const X = (t) => L + Math.max(0, Math.min(1, (t - t0) / span)) * (R - L);
+    const Y = (p) => B - Math.max(0, Math.min(100, p)) / 100 * (B - T);
+    const fmtTick = new Intl.DateTimeFormat(lang, range === "24h" ? { hour: "2-digit", minute: "2-digit" } : range === "7d" ? { weekday: "short" } : { day: "numeric", month: "short" });
+    const fmtFull = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    let grid = "";
+    for (const g of [0, 25, 50, 75, 100]) {
+      grid += `<line x1="${L}" x2="${R}" y1="${Y(g)}" y2="${Y(g)}" stroke="#fff" stroke-opacity="${g ? ".12" : ".3"}" stroke-width=".6"/><text x="${L - 4}" y="${Y(g) + 2.8}" text-anchor="end" font-size="8" fill="#fff" fill-opacity=".7">${g}</text>`;
+    }
+    const d = new Date(t0);
+    d.setMinutes(0, 0, 0);
+    if (range === "24h") d.setHours(Math.ceil((d.getHours() + 1) / 6) * 6); else d.setHours(24, 0, 0, 0);
+    for (let n = 0; d.getTime() <= t1 && n < 40; n++) {
+      const x = X(d.getTime());
+      grid += `<line x1="${x}" x2="${x}" y1="${T}" y2="${B}" stroke="#fff" stroke-opacity=".08" stroke-width=".6"/><text x="${x}" y="${B + 13}" text-anchor="middle" font-size="8" fill="#fff" fill-opacity=".7">${fmtTick.format(d)}</text>`;
+      if (range === "24h") d.setHours(d.getHours() + 6); else d.setDate(d.getDate() + (range === "7d" ? 1 : 5));
+    }
+    const line = pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+    const last = pts[pts.length - 1], first = pts[0];
+    const area = `${line}L${X(last[0]).toFixed(1)} ${B}L${X(first[0]).toFixed(1)} ${B}Z`;
+    const vals = pts.map((q) => q[1]);
+    const mn = Math.min(...vals), mx = Math.max(...vals), avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const lowZone = `<rect x="${L}" y="${Y(15)}" width="${R - L}" height="${B - Y(15)}" fill="#e0482f" opacity=".13"/>`;
+    svg.innerHTML = `<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--tank2)" stop-opacity=".55"/><stop offset="1" stop-color="var(--tank)" stop-opacity=".04"/></linearGradient></defs>
+      ${lowZone}${grid}
+      <path d="${area}" fill="url(#hg)"/><path d="${line}" fill="none" stroke="var(--tank2)" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${X(last[0])}" cy="${Y(last[1])}" r="3" fill="#fff" stroke="var(--tank)" stroke-width="1.5"/>
+      <g data-hx style="display:none"><line data-hl y1="${T}" y2="${B}" stroke="#fff" stroke-opacity=".5" stroke-width=".8"/><circle data-hc r="3.2" fill="var(--tank)" stroke="#fff" stroke-width="1.2"/></g>
+      <text data-ht2 x="${L + 4}" y="${T + 9}" font-size="8.5" fill="#fff" font-weight="700"></text>
+      <rect data-hcap x="${L}" y="${T}" width="${R - L}" height="${B - T}" fill="transparent"/>`;
+    const now = this._pct();
+    stat.innerHTML = [["min", mn], ["max", mx], ["avg", avg], ["now", now ?? last[1]]]
+      .map(([k, v]) => `<div class="hc"><span>${this._t(k)}</span><b>${this._fmt(v, 1)} %</b></div>`).join("");
+    // crosshair: nearest point under the pointer
+    const cap = svg.querySelector("[data-hcap]"), hx = svg.querySelector("[data-hx]"), hl = svg.querySelector("[data-hl]"), hc = svg.querySelector("[data-hc]"), tx = svg.querySelector("[data-ht2]");
+    const move = (e) => {
+      const box = svg.getBoundingClientRect(), x = (e.clientX - box.left) / box.width * W;
+      let best = pts[0], bd = Infinity;
+      for (const q of pts) { const dd = Math.abs(X(q[0]) - x); if (dd < bd) { bd = dd; best = q; } }
+      hx.style.display = ""; hl.setAttribute("x1", X(best[0])); hl.setAttribute("x2", X(best[0]));
+      hc.setAttribute("cx", X(best[0])); hc.setAttribute("cy", Y(best[1]));
+      tx.textContent = `${fmtFull.format(best[0])} · ${this._fmt(best[1], 1)} %`;
+    };
+    cap.addEventListener("pointermove", move);
+    cap.addEventListener("pointerdown", move);
+    cap.addEventListener("pointerleave", () => { hx.style.display = "none"; tx.textContent = ""; });
   }
 
   _update() {

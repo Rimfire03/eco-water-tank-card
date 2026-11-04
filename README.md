@@ -45,6 +45,7 @@ If you find this card helpful, consider buying me a coffee to support the develo
 - 🌧️ **Live weather**: rain falls on the scene (three depths, lightning in storms), the sky follows the sun (day, dusk, night).
 - 🚰 **Learned flow**: the water in the inlet pipe and the amount of rain show the current flow against the highest flow ever seen, read from the recorder history and learned for good.
 - 📊 **All the data on the picture**: level %, volume, capacity, usable volume, rain collected, efficiency, water in / out (today and total), net balance of the day, overflow.
+- 📈 **Fill history**: the round button next to the collection efficiency swaps the view for a chart of the tank fill over 24 h, 7 days or 30 days (min, max, average, now; touch or hover for the exact value).
 - 🔌 **With or without the integration**: use the Eco Water Tank device, or your own level / volume / flow / rain / pump sensors.
 - 📏 **Many units**: L, mL, m³, ft³, gal, … for volumes; mm, cm, m, in, ft, … for heights and rain; L/min, m³/h, gpm, mm/h, in/h, … for flows.
 - 🛠️ **Calibration** (integration): real volume or fill, "tank full / empty", share your tank.
@@ -165,6 +166,7 @@ The card ships with a day and a night picture. Use your own with `image` / `imag
 - 🌧️ **Météo en direct** : la pluie tombe sur la scène (trois profondeurs, éclairs en cas d'orage), le ciel suit le soleil (jour, crépuscule, nuit).
 - 🚰 **Débit appris** : l'eau dans le tuyau d'arrivée et la quantité de pluie montrent le débit actuel par rapport au plus fort débit jamais vu, lu dans l'historique et appris en continu.
 - 📊 **Toutes les données sur l'image** : niveau %, volume, capacité, volume utilisable, eau de pluie récupérée, rendement, eau entrée / sortie (du jour et total), bilan du jour, débordement.
+- 📈 **Historique de remplissage** : le bouton rond à côté du rendement de collecte remplace la vue par un graphique du remplissage sur 24 h, 7 jours ou 30 jours (min, max, moyenne, actuel ; toucher ou survoler pour la valeur exacte).
 - 🔌 **Avec ou sans l'intégration** : utilisez l'appareil Eco Water Tank, ou vos propres capteurs de niveau / volume / débit / pluie / pompe.
 - 📏 **Nombreuses unités** : L, mL, m³, ft³, gal… pour les volumes ; mm, cm, m, in, ft… pour les hauteurs et la pluie ; L/min, m³/h, gpm, mm/h, in/h… pour les débits.
 - 🛠️ **Calibration** (intégration) : volume ou remplissage réel, « cuve pleine / vide », partage de votre cuve.
