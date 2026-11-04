@@ -1,5 +1,9 @@
 # Eco Water Tank Card
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![GitHub release](https://img.shields.io/github/v/release/Rimfire03/eco-water-tank-card?include_prereleases)](https://github.com/Rimfire03/eco-water-tank-card/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Lovelace card for water tanks, made for the [Eco Water Tank](https://github.com/Rimfire03/eco-water-tank) integration but **usable without it**, with any sensors and units. No dependencies.
 
 <p align="center">

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Eco Water Tank integration
+    url: https://github.com/Rimfire03/eco-water-tank/issues
+    about: Problems with the sensors or the learned values belong to the integration.

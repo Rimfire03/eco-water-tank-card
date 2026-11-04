@@ -1,0 +1,46 @@
+name: Bug report
+description: Something is wrong with the card (display, animation, values, units)
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Card version
+      description: Shown in the browser console ("ECO-WATER-TANK-CARD v0.xx") or in HACS.
+    validations:
+      required: true
+  - type: input
+    id: ha
+    attributes:
+      label: Home Assistant version and browser
+      placeholder: "2026.10 / Chrome 130 on Android"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How is the card used?
+      options:
+        - With the Eco Water Tank integration
+        - Without the integration (own sensors)
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Card configuration (YAML)
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: sensors
+    attributes:
+      label: Sensors involved
+      description: For a unit or value problem, give the state and the unit of each entity (level, volume, inlet, outlet, rain).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected
+      description: A screenshot helps.
+    validations:
+      required: true
