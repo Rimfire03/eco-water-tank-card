@@ -1,6 +1,6 @@
 # 💧 Eco Water Tank Card
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
 [![GitHub release](https://img.shields.io/github/v/release/Rimfire03/eco-water-tank-card?include_prereleases)](https://github.com/Rimfire03/eco-water-tank-card/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-orange.svg?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/slide598b)
@@ -58,9 +58,10 @@ If you find this card helpful, consider buying me a coffee to support the develo
 ### Method 1: Via HACS (Recommended)
 
 1. Open **Home Assistant** and navigate to **HACS** > **Frontend** (**Dashboard**).
-2. Open the 3-dots menu > **Custom repositories**, add `https://github.com/Rimfire03/eco-water-tank-card` with the category **Dashboard**.
-3. Search for **Eco Water Tank Card** and click **Download**.
-4. Refresh your browser when prompted (Ctrl+F5).
+2. Search for **Eco Water Tank Card** and click **Download**.
+3. Refresh your browser when prompted (Ctrl+F5).
+
+*Not listed yet on your install? Add `https://github.com/Rimfire03/eco-water-tank-card` in the 3-dots menu > **Custom repositories** with the category **Dashboard**.*
 
 ---
 
@@ -179,9 +180,10 @@ The card ships with a day and a night picture. Use your own with `image` / `imag
 ### Méthode 1 : Via HACS (Recommandé)
 
 1. Ouvrez **Home Assistant** et allez dans **HACS** > **Interface** (**Dashboard**).
-2. Menu 3 points > **Dépôts personnalisés**, ajoutez `https://github.com/Rimfire03/eco-water-tank-card` avec la catégorie **Dashboard**.
-3. Recherchez **Eco Water Tank Card** et cliquez sur **Télécharger**.
-4. Rafraîchissez votre navigateur quand c'est demandé (Ctrl+F5).
+2. Recherchez **Eco Water Tank Card** et cliquez sur **Télécharger**.
+3. Rafraîchissez votre navigateur quand c'est demandé (Ctrl+F5).
+
+*Pas encore listée chez vous ? Ajoutez `https://github.com/Rimfire03/eco-water-tank-card` via le menu 3 points > **Dépôts personnalisés** avec la catégorie **Dashboard**.*
 
 ---
 
